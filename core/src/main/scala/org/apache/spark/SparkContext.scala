@@ -420,8 +420,14 @@ class SparkContext(config: SparkConf) extends Logging {
     // HADOOP-19097 Set fs.s3a.connection.establish.timeout to 30s
     // We can remove this after Apache Hadoop 3.4.1 releases
     conf.setIfMissing("spark.hadoop.fs.s3a.connection.establish.timeout", "30s")
-    // Enable Magic Committer by default for all buckets
-    conf.setIfMissing("spark.hadoop.fs.s3a.bucket.*.committer.magic.enabled", "true")
+    try {
+      // Try to enable Magic Committer by default for all buckets
+      Utils.classForName("org.apache.spark.internal.io.cloud.PathOutputCommitProtocol")
+      conf.setIfMissing("spark.hadoop.fs.s3a.bucket.*.committer.magic.enabled", "true")
+    } catch {
+      case e: ClassNotFoundException =>
+        // Magic Committer is not enabled because hadoop-cloud module is not included.
+    }
     // This should be set as early as possible.
     SparkContext.fillMissingMagicCommitterConfsIfNeeded(_conf)
 
