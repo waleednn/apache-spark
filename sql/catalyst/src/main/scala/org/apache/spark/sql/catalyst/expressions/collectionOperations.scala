@@ -1179,6 +1179,8 @@ object ArraySortLike {
 case class SortArray(base: Expression, ascendingOrder: Expression)
   extends BinaryExpression with ArraySortLike with NullIntolerant with QueryErrorsBase {
 
+  override protected[spark] def expectedCost = 150
+
   def this(e: Expression) = this(e, Literal(true))
 
   override def left: Expression = base
@@ -2154,6 +2156,8 @@ case class ArrayJoin(
   override def dataType: DataType = array.dataType.asInstanceOf[ArrayType].elementType
 
   override def prettyName: String = "array_join"
+
+  override protected[spark] def expectedCost = 200
 }
 
 /**
@@ -4408,6 +4412,8 @@ case class ArrayUnion(left: Expression, right: Expression) extends ArrayBinaryLi
 case class ArrayIntersect(left: Expression, right: Expression) extends ArrayBinaryLike
   with ComplexTypeMergingExpression {
 
+  override protected[spark] def expectedCost = 200
+
   private lazy val internalDataType: DataType = {
     dataTypeCheck
     ArrayType(elementType, leftArrayElementNullable && rightArrayElementNullable)
@@ -4639,6 +4645,8 @@ case class ArrayIntersect(left: Expression, right: Expression) extends ArrayBina
   since = "2.4.0")
 case class ArrayExcept(left: Expression, right: Expression) extends ArrayBinaryLike
   with ComplexTypeMergingExpression {
+
+  override protected[spark] def expectedCost = 200
 
   private lazy val internalDataType: DataType = {
     dataTypeCheck
