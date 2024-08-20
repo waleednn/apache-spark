@@ -63,6 +63,8 @@ compoundStatement
     : statement
     | setStatementWithOptionalVarKeyword
     | beginEndCompoundBlock
+    | declareCondition
+    | declareHandler
     | ifElseStatement
     | whileStatement
     ;
@@ -85,6 +87,23 @@ ifElseStatement
 
 singleStatement
     : (statement|setResetStatement) SEMICOLON* EOF
+    ;
+
+conditionValue
+    : stringLit
+    | multipartIdentifier
+    ;
+
+conditionValueList
+    : ((conditionValues+=conditionValue (COMMA conditionValues+=conditionValue)*) | SQLEXCEPTION | NOT FOUND)
+    ;
+
+declareCondition
+    : DECLARE multipartIdentifier CONDITION (FOR stringLit)?
+    ;
+
+declareHandler
+    : DECLARE (CONTINUE | EXIT) HANDLER FOR conditionValueList (BEGIN compoundBody END | statement | setStatementWithOptionalVarKeyword)
     ;
 
 beginLabel
@@ -1503,6 +1522,7 @@ ansiNonReserved
     | COMPUTE
     | CONCATENATE
     | CONTAINS
+    | CONTINUE
     | COST
     | CUBE
     | CURRENT
@@ -1542,6 +1562,7 @@ ansiNonReserved
     | EXCHANGE
     | EXCLUDE
     | EXISTS
+    | EXIT
     | EXPLAIN
     | EXPORT
     | EXTENDED
@@ -1554,11 +1575,13 @@ ansiNonReserved
     | FOLLOWING
     | FORMAT
     | FORMATTED
+    | FOUND
     | FUNCTION
     | FUNCTIONS
     | GENERATED
     | GLOBAL
     | GROUPING
+    | HANDLER
     | HOUR
     | HOURS
     | IDENTIFIER_KW
@@ -1684,6 +1707,7 @@ ansiNonReserved
     | SORTED
     | SOURCE
     | SPECIFIC
+    | SQLEXCEPTION
     | START
     | STATISTICS
     | STORED
@@ -1828,8 +1852,10 @@ nonReserved
     | COMPENSATION
     | COMPUTE
     | CONCATENATE
+    | CONDITION
     | CONSTRAINT
     | CONTAINS
+    | CONTINUE
     | COST
     | CREATE
     | CUBE
@@ -1879,6 +1905,7 @@ nonReserved
     | EXCLUDE
     | EXECUTE
     | EXISTS
+    | EXIT
     | EXPLAIN
     | EXPORT
     | EXTENDED
@@ -1896,6 +1923,7 @@ nonReserved
     | FOREIGN
     | FORMAT
     | FORMATTED
+    | FOUND
     | FROM
     | FUNCTION
     | FUNCTIONS
@@ -1904,6 +1932,7 @@ nonReserved
     | GRANT
     | GROUP
     | GROUPING
+    | HANDLER
     | HAVING
     | HOUR
     | HOURS
@@ -2047,6 +2076,7 @@ nonReserved
     | SOURCE
     | SPECIFIC
     | SQL
+    | SQLEXCEPTION
     | START
     | STATISTICS
     | STORED

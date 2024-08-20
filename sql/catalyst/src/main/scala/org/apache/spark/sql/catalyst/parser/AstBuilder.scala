@@ -20,6 +20,7 @@ package org.apache.spark.sql.catalyst.parser
 import java.util.Locale
 import java.util.concurrent.TimeUnit
 
+import scala.collection.mutable
 import scala.collection.mutable.{ArrayBuffer, ListBuffer, Set}
 import scala.jdk.CollectionConverters._
 import scala.util.{Left, Right}
@@ -133,11 +134,13 @@ class AstBuilder extends DataTypeAstBuilder
   override def visitCompoundOrSingleStatement(
       ctx: CompoundOrSingleStatementContext): CompoundBody = withOrigin(ctx) {
     Option(ctx.singleCompoundStatement()).map { s =>
+      if (!SQLConf.get.sqlScriptingEnabled) {
+        throw SqlScriptingErrors.sqlScriptingNotEnabled(CurrentOrigin.get)
+      }
       visit(s).asInstanceOf[CompoundBody]
     }.getOrElse {
       val logicalPlan = visitSingleStatement(ctx.singleStatement())
-      CompoundBody(Seq(SingleStatement(parsedPlan = logicalPlan)),
-        Some(java.util.UUID.randomUUID.toString.toLowerCase(Locale.ROOT)))
+      CompoundBody(Seq(SingleStatement(parsedPlan = logicalPlan)))
     }
   }
 
@@ -150,8 +153,24 @@ class AstBuilder extends DataTypeAstBuilder
       label: Option[String],
       allowVarDeclare: Boolean): CompoundBody = {
     val buff = ListBuffer[CompoundPlanStatement]()
+    val handlers = ListBuffer[ErrorHandler]()
+    val conditions = mutable.HashMap[String, String]()
+    val sqlStates = mutable.Set[String]()
+
     ctx.compoundStatements.forEach(compoundStatement => {
-      buff += visit(compoundStatement).asInstanceOf[CompoundPlanStatement]
+      val stmt = visit(compoundStatement).asInstanceOf[CompoundPlanStatement]
+
+      stmt match {
+        case handler: ErrorHandler => handlers += handler
+        case condition: ErrorCondition =>
+          if (conditions.contains(condition.conditionName)) {
+            throw SqlScriptingErrors.duplicateConditionNameForDifferentSqlState(
+              CurrentOrigin.get, condition.conditionName)
+          }
+          conditions += condition.conditionName -> condition.value
+          sqlStates += condition.value
+        case s => buff += s
+      }
     })
 
     val compoundStatements = buff.toList
@@ -185,7 +204,7 @@ class AstBuilder extends DataTypeAstBuilder
       case _ =>
     }
 
-    CompoundBody(buff.toSeq, label)
+    CompoundBody(buff.toSeq, label, handlers.toSeq, conditions)
   }
 
 
@@ -234,6 +253,27 @@ class AstBuilder extends DataTypeAstBuilder
         }
     }
 
+  override def visitConditionValue(ctx: ConditionValueContext): String = {
+    Option(ctx.multipartIdentifier()).map(_.getText)
+      .getOrElse(ctx.stringLit().getText).replace("'", "")
+  }
+
+  override def visitConditionValueList(ctx: ConditionValueListContext): Seq[String] = {
+    Option(ctx.SQLEXCEPTION()).map(_ => Seq("SQLEXCEPTION")).getOrElse {
+      Option(ctx.NOT()).map(_ => Seq("NOT FOUND")).getOrElse {
+        val buff = scala.collection.mutable.Set[String]()
+        ctx.conditionValues.forEach { conditionValue =>
+          val elem = visit(conditionValue).asInstanceOf[String]
+          if (buff(elem)) {
+            throw SqlScriptingErrors.duplicateSqlStateForSameHandler(CurrentOrigin.get, elem)
+          }
+          buff += elem
+        }
+        buff.toSeq
+      }
+    }
+  }
+
   override def visitIfElseStatement(ctx: IfElseStatementContext): IfElseStatement = {
     IfElseStatement(
       conditions = ctx.booleanExpression().asScala.toList.map(boolExpr => withOrigin(boolExpr) {
@@ -259,6 +299,28 @@ class AstBuilder extends DataTypeAstBuilder
     val body = visitCompoundBody(ctx.compoundBody())
 
     WhileStatement(condition, body, Some(labelText))
+  }
+
+  override def visitDeclareCondition(ctx: DeclareConditionContext): ErrorCondition = {
+    val conditionName = ctx.multipartIdentifier().getText
+    val conditionValue = Option(ctx.stringLit()).map(_.getText.replace("'", "")).getOrElse("45000")
+
+    val sqlStateRegex = "^[A-Za-z0-9]{5}$".r
+    assert(sqlStateRegex.findFirstIn(conditionValue).isDefined)
+
+    ErrorCondition(conditionName, conditionValue)
+  }
+
+  override def visitDeclareHandler(ctx: DeclareHandlerContext): ErrorHandler = {
+    val conditions = visit(ctx.conditionValueList()).asInstanceOf[Seq[String]]
+    val handlerType = Option(ctx.EXIT()).map(_ => HandlerType.EXIT).getOrElse(HandlerType.CONTINUE)
+
+    val body = Option(ctx.compoundBody()).map(visit).getOrElse {
+      val logicalPlan = visitChildren(ctx).asInstanceOf[LogicalPlan]
+      CompoundBody(Seq(SingleStatement(parsedPlan = logicalPlan)))
+    }.asInstanceOf[CompoundBody]
+
+    ErrorHandler(conditions, body, handlerType)
   }
 
   override def visitSingleStatement(ctx: SingleStatementContext): LogicalPlan = withOrigin(ctx) {

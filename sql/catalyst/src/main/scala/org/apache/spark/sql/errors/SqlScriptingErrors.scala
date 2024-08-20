@@ -20,6 +20,7 @@ package org.apache.spark.sql.errors
 import org.apache.spark.sql.catalyst.trees.Origin
 import org.apache.spark.sql.errors.QueryExecutionErrors.toSQLStmt
 import org.apache.spark.sql.exceptions.SqlScriptingException
+import org.apache.spark.sql.internal.SQLConf
 
 /**
  * Object for grouping error messages thrown during parsing/interpreting phase
@@ -41,6 +42,40 @@ private[sql] object SqlScriptingErrors {
       errorClass = "END_LABEL_WITHOUT_BEGIN_LABEL",
       cause = null,
       messageParameters = Map("endLabel" -> endLabel))
+  }
+
+  def sqlScriptingNotEnabled(origin: Origin): Throwable = {
+    new SqlScriptingException(
+      origin = origin,
+      errorClass = "UNSUPPORTED_FEATURE.SQL_SCRIPTING_NOT_ENABLED",
+      cause = null,
+      messageParameters = Map("sqlScriptingEnabled" -> SQLConf.SQL_SCRIPTING_ENABLED.key))
+  }
+
+  def duplicateHandlerForSameSqlState(origin: Origin, sqlState: String): Throwable = {
+    new SqlScriptingException(
+      origin = origin,
+      errorClass = "DUPLICATE_HANDLER_FOR_SAME_SQL_STATE",
+      cause = null,
+      messageParameters = Map("sqlState" -> sqlState))
+  }
+
+  def duplicateSqlStateForSameHandler(origin: Origin, sqlState: String): Throwable = {
+    new SqlScriptingException(
+      origin = origin,
+          errorClass = "DUPLICATE_SQL_STATE_FOR_SAME_HANDLER",
+      cause = null,
+      messageParameters = Map("sqlState" -> sqlState))
+  }
+
+  def duplicateConditionNameForDifferentSqlState(
+      origin: Origin,
+      conditionName: String): Throwable = {
+    new SqlScriptingException(
+      origin = origin,
+      errorClass = "DUPLICATE_CONDITION_NAME_FOR_DIFFERENT_SQL_STATE",
+      cause = null,
+      messageParameters = Map("conditionName" -> conditionName))
   }
 
   def variableDeclarationNotAllowedInScope(
