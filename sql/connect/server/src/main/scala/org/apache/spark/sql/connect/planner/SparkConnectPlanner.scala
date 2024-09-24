@@ -2703,6 +2703,7 @@ class SparkConnectPlanner(
       name = tableIdentifier,
       userSpecifiedColumns = Nil,
       comment = None,
+      collation = None,
       properties = Map.empty,
       originalText = None,
       plan = transformRelation(createView.getInput),

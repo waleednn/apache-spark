@@ -33,6 +33,7 @@ import org.apache.spark.sql.catalyst.{FunctionIdentifier, TableIdentifier}
 import org.apache.spark.sql.catalyst.analysis.{DatabaseAlreadyExistsException, NoSuchDatabaseException, PartitionsAlreadyExistException}
 import org.apache.spark.sql.catalyst.catalog._
 import org.apache.spark.sql.catalyst.expressions.{AttributeReference, EqualTo, Literal}
+import org.apache.spark.sql.connector.catalog.SupportsNamespaces
 import org.apache.spark.sql.hive.HiveExternalCatalog
 import org.apache.spark.sql.hive.test.TestHiveVersion
 import org.apache.spark.sql.types.{IntegerType, StructType}
@@ -68,11 +69,13 @@ class HiveClientSuite(version: String) extends HiveVersionSuite(version) {
   }
 
   def table(database: String, tableName: String,
+      collation: Option[String] = None,
       tableType: CatalogTableType = CatalogTableType.MANAGED): CatalogTable = {
     CatalogTable(
       identifier = TableIdentifier(tableName, Some(database)),
       tableType = tableType,
       schema = new StructType().add("key", "int"),
+      collation = collation,
       storage = CatalogStorageFormat(
         locationUri = None,
         inputFormat = Some(classOf[TextInputFormat].getName),
@@ -90,10 +93,10 @@ class HiveClientSuite(version: String) extends HiveVersionSuite(version) {
   private val tempDatabasePath = Utils.createTempDir().toURI
 
   test("createDatabase") {
-    val defaultDB = CatalogDatabase("default", "desc", new URI("loc"), Map())
+    val defaultDB = CatalogDatabase("default", "desc", collation = None, new URI("loc"), Map())
     client.createDatabase(defaultDB, ignoreIfExists = true)
     val tempDB = CatalogDatabase(
-      "temporary", description = "test create", tempDatabasePath, Map())
+      "temporary", description = "test create", collation = None, tempDatabasePath, Map())
     client.createDatabase(tempDB, ignoreIfExists = true)
 
     intercept[DatabaseAlreadyExistsException] {
@@ -109,7 +112,8 @@ class HiveClientSuite(version: String) extends HiveVersionSuite(version) {
     val ownerProps = Map("owner" -> ownerName)
 
     // create database with owner
-    val dbWithOwner = CatalogDatabase(db1, "desc", Utils.createTempDir().toURI, ownerProps)
+    val dbWithOwner = CatalogDatabase(db1, "desc", collation = None,
+      Utils.createTempDir().toURI, ownerProps)
     client.createDatabase(dbWithOwner, ignoreIfExists = true)
     val getDbWithOwner = client.getDatabase(db1)
     assert(getDbWithOwner.properties("owner") === ownerName)
@@ -118,7 +122,8 @@ class HiveClientSuite(version: String) extends HiveVersionSuite(version) {
     assert(client.getDatabase(db1).properties("owner") === "")
 
     // create database without owner
-    val dbWithoutOwner = CatalogDatabase(db2, "desc", Utils.createTempDir().toURI, Map())
+    val dbWithoutOwner = CatalogDatabase(db2, "desc", collation = None,
+      Utils.createTempDir().toURI, Map())
     client.createDatabase(dbWithoutOwner, ignoreIfExists = true)
     val getDbWithoutOwner = client.getDatabase(db2)
     assert(getDbWithoutOwner.properties("owner") === currentUser)
@@ -130,9 +135,24 @@ class HiveClientSuite(version: String) extends HiveVersionSuite(version) {
   test("createDatabase with null description") {
     withTempDir { tmpDir =>
       val dbWithNullDesc =
-        CatalogDatabase("dbWithNullDesc", description = null, tmpDir.toURI, Map())
+        CatalogDatabase("dbWithNullDesc", description = null, collation = None, tmpDir.toURI, Map())
       client.createDatabase(dbWithNullDesc, ignoreIfExists = true)
       assert(client.getDatabase("dbWithNullDesc").description == "")
+    }
+  }
+
+  test("create/alter database with collation set") {
+    withTempDir { tmpDir =>
+      val db = CatalogDatabase("dbWithCollation", description = "desc", collation = Some("UNICODE"),
+        tmpDir.toURI, Map.empty)
+      client.createDatabase(db, ignoreIfExists = true)
+
+      val readBack = client.getDatabase("dbWithCollation")
+      assert(readBack.collation === Some("UNICODE"))
+
+      client.alterDatabase(readBack.copy(collation = Some("UNICODE_CI")))
+      val alteredDb = client.getDatabase("dbWithCollation")
+      assert(alteredDb.collation === Some("UNICODE_CI"))
     }
   }
 
@@ -202,6 +222,22 @@ class HiveClientSuite(version: String) extends HiveVersionSuite(version) {
     client.createTable(table("default", tableName = "temporary"), ignoreIfExists = false)
     client.createTable(table("default", tableName = "view1", tableType = CatalogTableType.VIEW),
       ignoreIfExists = false)
+  }
+
+  test("create/alter table with collations") {
+    client.createTable(table("default", tableName = "collation_table",
+      collation = Some("UNICODE")), ignoreIfExists = false)
+
+    val readBack = client.getTable("default", "collation_table")
+    assert(!readBack.properties.contains(SupportsNamespaces.PROP_COLLATION))
+    assert(readBack.collation === Some("UNICODE"))
+
+    client.alterTable("default", "collation_table",
+      readBack.copy(collation = Some("UNICODE_CI")))
+    val alteredTbl = client.getTable("default", "collation_table")
+    assert(alteredTbl.collation === Some("UNICODE_CI"))
+
+    client.dropTable("default", "collation_table", ignoreIfNotExists = true, purge = true)
   }
 
   test("loadTable") {
@@ -292,7 +328,7 @@ class HiveClientSuite(version: String) extends HiveVersionSuite(version) {
 
   test("alterTable - change database") {
     val tempDB = CatalogDatabase(
-      "temporary", description = "test create", tempDatabasePath, Map())
+      "temporary", description = "test create", collation = None, tempDatabasePath, Map())
     client.createDatabase(tempDB, ignoreIfExists = true)
 
     val newTable = client.getTable("default", "tgt")
@@ -314,6 +350,17 @@ class HiveClientSuite(version: String) extends HiveVersionSuite(version) {
 
     assert(client.tableExists("default", "src"))
     assert(!client.tableExists("temporary", "tgt"))
+  }
+
+  test("alterTable - change collation") {
+    val newTable = client.getTable("default", "src")
+      .copy(collation = Some("uNiCodE_CI"))
+
+    client.alterTable("default", "src", newTable)
+    val readBack = client.getTable("default", "src")
+
+    assert(readBack.collation === Some("uNiCodE_CI"))
+    assert(!readBack.properties.contains(SupportsNamespaces.PROP_COLLATION))
   }
 
   test("listTables(database)") {

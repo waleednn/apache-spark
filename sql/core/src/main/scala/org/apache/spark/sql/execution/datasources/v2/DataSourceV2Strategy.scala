@@ -384,6 +384,12 @@ class DataSourceV2Strategy(session: SparkSession) extends Strategy with Predicat
         ns,
         Map(SupportsNamespaces.PROP_LOCATION -> makeQualifiedDBObjectPath(location))) :: Nil
 
+    case SetNamespaceCollation(ResolvedNamespace(catalog, ns, _), collation) =>
+      AlterNamespaceSetPropertiesExec(
+        catalog.asNamespaceCatalog,
+        ns,
+        Map(SupportsNamespaces.PROP_COLLATION -> collation)) :: Nil
+
     case CommentOnNamespace(ResolvedNamespace(catalog, ns, _), comment) =>
       AlterNamespaceSetPropertiesExec(
         catalog.asNamespaceCatalog,

@@ -372,7 +372,11 @@ private[hive] class HiveClientImpl(
 
   private def toHiveDatabase(
       database: CatalogDatabase, userName: Option[String] = None): HiveDatabase = {
-    val props = database.properties
+    val props = if (database.collation.isDefined) {
+      database.properties + (PROP_COLLATION -> database.collation.get)
+    } else {
+      database.properties
+    }
     val hiveDb = new HiveDatabase(
       database.name,
       database.description,
@@ -392,8 +396,9 @@ private[hive] class HiveClientImpl(
       CatalogDatabase(
         name = d.getName,
         description = Option(d.getDescription).getOrElse(""),
+        collation = params.get(PROP_COLLATION),
         locationUri = CatalogUtils.stringToURI(d.getLocationUri),
-        properties = params)
+        properties = params -- Seq(PROP_COLLATION))
     }.getOrElse(throw new NoSuchDatabaseException(dbName))
   }
 
@@ -501,6 +506,7 @@ private[hive] class HiveClientImpl(
     val excludedTableProperties = HiveStatisticsProperties ++ Set(
       // The property value of "comment" is moved to the dedicated field "comment"
       "comment",
+      PROP_COLLATION,
       // For EXTERNAL_TABLE, the table properties has a particular field "EXTERNAL". This is added
       // in the function toHiveTable.
       "EXTERNAL"
@@ -510,6 +516,7 @@ private[hive] class HiveClientImpl(
       case (key, _) => excludedTableProperties.contains(key)
     }
     val comment = properties.get("comment")
+    val collation = properties.get(PROP_COLLATION)
 
     CatalogTable(
       identifier = TableIdentifier(h.getTableName, Option(h.getDbName)),
@@ -552,6 +559,7 @@ private[hive] class HiveClientImpl(
       properties = filteredProperties,
       stats = readHiveStats(properties),
       comment = comment,
+      collation = collation,
       // In older versions of Spark(before 2.2.0), we expand the view original text and
       // store that into `viewExpandedText`, that should be used in view resolution.
       // We get `viewExpandedText` as viewText, and also get `viewOriginalText` in order to
@@ -1139,6 +1147,7 @@ private[hive] object HiveClientImpl extends Logging {
     table.storage.properties.foreach { case (k, v) => hiveTable.setSerdeParam(k, v) }
     table.properties.foreach { case (k, v) => hiveTable.setProperty(k, v) }
     table.comment.foreach { c => hiveTable.setProperty("comment", c) }
+    table.collation.foreach { c => hiveTable.setProperty(PROP_COLLATION, c) }
     // Hive will expand the view text, so it needs 2 fields: viewOriginalText and viewExpandedText.
     // Since we don't expand the view text, but only add table properties, we map the `viewText` to
     // the both fields in hive table.
