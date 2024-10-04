@@ -314,6 +314,8 @@ class FileStreamSource(
         partitionColumns = partitionColumns,
         className = fileFormatClassName,
         options = optionsForInnerDataSource)
+
+    import org.apache.spark.sql.util.EmptyRelationImplicit._
     Dataset.ofRows(sparkSession, LogicalRelation(newDataSource.resolveRelation(
       checkFilesExist = false), isStreaming = true))
   }

@@ -1421,6 +1421,7 @@ class FakeDefaultSource extends FakeSource {
 
       override def getBatch(start: Option[Offset], end: Offset): DataFrame = {
         val startOffset = start.map(_.asInstanceOf[LongOffset].offset).getOrElse(-1L) + 1
+        import org.apache.spark.sql.util.EmptyRelationImplicit._
         val ds = new Dataset[java.lang.Long](
           spark.sparkSession,
           Range(
