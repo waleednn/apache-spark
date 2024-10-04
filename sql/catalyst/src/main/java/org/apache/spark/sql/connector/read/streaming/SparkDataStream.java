@@ -18,6 +18,7 @@
 package org.apache.spark.sql.connector.read.streaming;
 
 import org.apache.spark.annotation.Evolving;
+import org.apache.spark.sql.util.EmptyRelationImplicit;
 
 /**
  * The base interface representing a readable data stream in a Spark streaming query. It's
@@ -29,7 +30,7 @@ import org.apache.spark.annotation.Evolving;
  * @since 3.0.0
  */
 @Evolving
-public interface SparkDataStream {
+public interface SparkDataStream extends EmptyRelationImplicit {
 
   /**
    * Returns the initial offset for a streaming query to start reading from. Note that the

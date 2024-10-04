@@ -31,10 +31,10 @@ import org.apache.spark.internal.LogKeys.EXTENDED_EXPLAIN_GENERATOR
 import org.apache.spark.rdd.RDD
 import org.apache.spark.sql.{AnalysisException, ExtendedExplainGenerator, Row, SparkSession}
 import org.apache.spark.sql.catalyst.{InternalRow, QueryPlanningTracker}
-import org.apache.spark.sql.catalyst.analysis.UnsupportedOperationChecker
+import org.apache.spark.sql.catalyst.analysis.{MultiInstanceRelation, RelationWrapper, UnsupportedOperationChecker}
 import org.apache.spark.sql.catalyst.expressions.codegen.ByteCodeStats
 import org.apache.spark.sql.catalyst.plans.QueryPlan
-import org.apache.spark.sql.catalyst.plans.logical.{AppendData, Command, CommandResult, CreateTableAsSelect, LogicalPlan, OverwriteByExpression, OverwritePartitionsDynamic, ReplaceTableAsSelect, ReturnAnswer, Union}
+import org.apache.spark.sql.catalyst.plans.logical.{AppendData, Command, CommandResult, CreateTableAsSelect, LogicalPlan, OverwriteByExpression, OverwritePartitionsDynamic, ReplaceTableAsSelect, ReturnAnswer, SkipDedupRuleMarker, Union}
 import org.apache.spark.sql.catalyst.rules.{PlanChangeLogger, Rule}
 import org.apache.spark.sql.catalyst.util.StringUtils.PlanStringConcat
 import org.apache.spark.sql.catalyst.util.truncatedString
@@ -61,7 +61,8 @@ class QueryExecution(
     val logical: LogicalPlan,
     val tracker: QueryPlanningTracker = new QueryPlanningTracker,
     val mode: CommandExecutionMode.Value = CommandExecutionMode.ALL,
-    val shuffleCleanupMode: ShuffleCleanupMode = DoNotCleanup) extends Logging {
+    val shuffleCleanupMode: ShuffleCleanupMode = DoNotCleanup,
+    private val withRelations: Set[RelationWrapper] = Set.empty) extends Logging {
 
   val id: Long = QueryExecution.nextExecutionId
 
@@ -89,13 +90,33 @@ class QueryExecution(
   private val lazyAnalyzed = LazyTry {
     val plan = executePhase(QueryPlanningTracker.ANALYSIS) {
       // We can't clone `logical` here, which will reset the `_analyzed` flag.
-      sparkSession.sessionState.analyzer.executeAndCheck(logical, tracker)
+      val skipDedupRule = withRelations.nonEmpty
+      val planToAnalyze = if (skipDedupRule) {
+        SkipDedupRuleMarker(logical)
+      } else {
+        logical
+      }
+      sparkSession.sessionState.analyzer.executeAndCheck(planToAnalyze, tracker)
     }
     tracker.setAnalyzed(plan)
     plan
   }
 
   def analyzed: LogicalPlan = lazyAnalyzed.get
+
+  private lazy val identifiedRelations: Set[RelationWrapper] =
+    if (this.withRelations.isEmpty) {
+      this.analyzed.collect {
+        case m: MultiInstanceRelation => RelationWrapper(m.getClass, m.output.map(_.exprId.id))
+      }.toSet
+    } else {
+      // TODO: Asif : should we always get from the analyzed plan or reuse ?
+      // as of now it seems fine to reuse, as InMemoryRelation substitution happens after
+      // analysis
+      this.withRelations
+    }
+
+  def getRelations: Set[RelationWrapper] = identifiedRelations
 
   private val lazyCommandExecuted = LazyTry {
     mode match {
@@ -126,7 +147,7 @@ class QueryExecution(
       // with the rest of processing of the root plan being just outputting command results,
       // for eagerly executed commands we mark this place as beginning of execution.
       tracker.setReadyForExecution()
-      val qe = sparkSession.sessionState.executePlan(p, mode)
+      val qe = sparkSession.sessionState.executePlan(p, mode)(getRelations)
       val result = QueryExecution.withInternalError(s"Eagerly executed $name failed.") {
         SQLExecution.withNewExecutionId(qe, Some(name)) {
           qe.executedPlan.executeCollect()

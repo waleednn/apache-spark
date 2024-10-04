@@ -58,9 +58,11 @@ import org.apache.spark.sql.internal.StaticSQLConf.CATALOG_IMPLEMENTATION
 import org.apache.spark.sql.sources.BaseRelation
 import org.apache.spark.sql.streaming._
 import org.apache.spark.sql.types.{DataType, StructType}
+import org.apache.spark.sql.util.EmptyRelationImplicit._
 import org.apache.spark.sql.util.ExecutionListenerManager
 import org.apache.spark.util.{CallSite, SparkFileUtils, ThreadUtils, Utils}
 import org.apache.spark.util.ArrayImplicits._
+
 
 /**
  * The entry point to programming Spark with the Dataset and DataFrame API.

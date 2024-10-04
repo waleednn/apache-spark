@@ -418,7 +418,7 @@ private[sql] object ArrowConverters extends Logging {
         session.sessionState.conf.sessionLocalTimeZone,
         errorOnDuplicatedFieldNames = false,
         TaskContext.get())
-
+      import org.apache.spark.sql.util.EmptyRelationImplicit._
       // Project/copy it. Otherwise, the Arrow column vectors will be closed and released out.
       val proj = UnsafeProjection.create(attrs, attrs)
       Dataset.ofRows(session,

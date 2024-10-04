@@ -30,11 +30,12 @@ import org.apache.spark.sql.catalyst.expressions.aggregate.AggregateExpression
 import org.apache.spark.sql.catalyst.plans.logical._
 import org.apache.spark.sql.catalyst.util._
 import org.apache.spark.sql.internal.SQLConf
+import org.apache.spark.sql.util.EmptyRelationImplicit
 
 /**
  * Provides helper methods for comparing plans.
  */
-trait PlanTest extends SparkFunSuite with PlanTestBase
+trait PlanTest extends SparkFunSuite with PlanTestBase with EmptyRelationImplicit
 
 trait CodegenInterpretedPlanTest extends PlanTest {
 

@@ -82,6 +82,7 @@ import org.apache.spark.sql.internal.ExpressionUtils.column
 import org.apache.spark.sql.streaming.{GroupStateTimeout, OutputMode, StreamingQuery, StreamingQueryListener, StreamingQueryProgress, Trigger}
 import org.apache.spark.sql.types._
 import org.apache.spark.sql.util.CaseInsensitiveStringMap
+import org.apache.spark.sql.util.EmptyRelationImplicit._
 import org.apache.spark.storage.CacheId
 import org.apache.spark.util.ArrayImplicits._
 import org.apache.spark.util.Utils
@@ -1415,7 +1416,8 @@ class SparkConnectPlanner(
       localMap.foreach { case (key, value) => reader.option(key, value) }
       reader
     }
-    def ds: Dataset[String] = Dataset(session, transformRelation(rel.getInput))(Encoders.STRING)
+    def ds: Dataset[String] = Dataset(session, transformRelation(rel.getInput))(
+      Encoders.STRING, withRelations)
 
     rel.getFormat match {
       case ParseFormat.PARSE_FORMAT_CSV =>

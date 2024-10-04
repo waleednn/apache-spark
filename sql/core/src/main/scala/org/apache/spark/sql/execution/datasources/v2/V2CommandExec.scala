@@ -24,12 +24,13 @@ import org.apache.spark.sql.catalyst.expressions.{AttributeSet, GenericRowWithSc
 import org.apache.spark.sql.catalyst.trees.LeafLike
 import org.apache.spark.sql.catalyst.types.DataTypeUtils
 import org.apache.spark.sql.execution.SparkPlan
+import org.apache.spark.sql.util.EmptyRelationImplicit
 
 /**
  * A physical operator that executes run() and saves the result to prevent multiple executions.
  * Any V2 commands that do not require triggering a spark job should extend this class.
  */
-abstract class V2CommandExec extends SparkPlan {
+abstract class V2CommandExec extends SparkPlan with EmptyRelationImplicit {
 
   /**
    * Abstract method that each concrete command needs to implement to compute the result.

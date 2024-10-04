@@ -33,7 +33,7 @@ import org.apache.spark.internal.Logging
 import org.apache.spark.internal.config
 import org.apache.spark.internal.config.UI._
 import org.apache.spark.sql.{DataFrame, Dataset, SparkSession, SQLContext}
-import org.apache.spark.sql.catalyst.analysis.UnresolvedRelation
+import org.apache.spark.sql.catalyst.analysis.{RelationWrapper, UnresolvedRelation}
 import org.apache.spark.sql.catalyst.catalog.ExternalCatalogWithListener
 import org.apache.spark.sql.catalyst.expressions.CodegenObjectFactoryMode
 import org.apache.spark.sql.catalyst.optimizer.ConvertToLocalRelation
@@ -45,6 +45,7 @@ import org.apache.spark.sql.hive._
 import org.apache.spark.sql.hive.client.HiveClient
 import org.apache.spark.sql.internal.{SessionState, SharedState, SQLConf, WithTestConf}
 import org.apache.spark.sql.internal.StaticSQLConf.{CATALOG_IMPLEMENTATION, WAREHOUSE_PATH}
+import org.apache.spark.sql.util.EmptyRelationImplicit
 import org.apache.spark.util.{ShutdownHookManager, Utils}
 
 // SPARK-3729: Test key required to check for initialization errors with config.
@@ -175,7 +176,7 @@ private[hive] class TestHiveSparkSession(
     @transient private val existingSharedState: Option[TestHiveSharedState],
     @transient private val parentSessionState: Option[SessionState],
     private val loadTestTables: Boolean)
-  extends SparkSession(sc) with Logging { self =>
+  extends SparkSession(sc) with Logging with EmptyRelationImplicit { self =>
 
   def this(sc: SparkContext, loadTestTables: Boolean) = {
     this(
@@ -581,11 +582,13 @@ private[hive] class TestHiveSparkSession(
 private[hive] class TestHiveQueryExecution(
     sparkSession: TestHiveSparkSession,
     logicalPlan: LogicalPlan,
+    withRelations: Set[RelationWrapper],
     mode: CommandExecutionMode.Value = CommandExecutionMode.ALL)
-  extends QueryExecution(sparkSession, logicalPlan, mode = mode) with Logging {
+  extends QueryExecution(sparkSession, logicalPlan, mode = mode, withRelations = withRelations)
+    with Logging {
 
   def this(sparkSession: TestHiveSparkSession, sql: String) = {
-    this(sparkSession, sparkSession.sessionState.sqlParser.parsePlan(sql))
+    this(sparkSession, sparkSession.sessionState.sqlParser.parsePlan(sql), Set.empty)
   }
 
   def this(sql: String) = {
@@ -654,14 +657,14 @@ private[sql] class TestHiveSessionStateBuilder(
     session: SparkSession,
     state: Option[SessionState])
   extends HiveSessionStateBuilder(session, state)
-  with WithTestConf {
+  with WithTestConf with EmptyRelationImplicit {
 
   override def overrideConfs: Map[String, String] = TestHiveContext.overrideConfs
 
   override def createQueryExecution:
-    (LogicalPlan, CommandExecutionMode.Value) => QueryExecution =
-      (plan, mode) =>
-        new TestHiveQueryExecution(session.asInstanceOf[TestHiveSparkSession], plan, mode)
+    (LogicalPlan, CommandExecutionMode.Value, Set[RelationWrapper]) => QueryExecution =
+      (plan, mode, rels) =>
+        new TestHiveQueryExecution(session.asInstanceOf[TestHiveSparkSession], plan, rels, mode)
 
   override protected def newBuilder: NewBuilder = new TestHiveSessionStateBuilder(_, _)
 }

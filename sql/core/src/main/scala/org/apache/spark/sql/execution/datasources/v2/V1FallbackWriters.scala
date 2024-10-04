@@ -76,6 +76,7 @@ trait SupportsV1Write extends SparkPlan {
   def plan: LogicalPlan
 
   protected def writeWithV1(relation: InsertableRelation): Seq[InternalRow] = {
+    import org.apache.spark.sql.util.EmptyRelationImplicit._
     relation.insert(Dataset.ofRows(session, plan), overwrite = false)
     Nil
   }

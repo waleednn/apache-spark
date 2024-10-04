@@ -33,6 +33,7 @@ class ForeachBatchSink[T](batchWriter: (Dataset[T], Long) => Unit, encoder: Expr
     val node = LogicalRDD.fromDataset(rdd = data.queryExecution.toRdd, originDataset = data,
       isStreaming = false)
     implicit val enc = encoder
+    import org.apache.spark.sql.util.EmptyRelationImplicit._
     val ds = Dataset.ofRows(data.sparkSession, node).as[T]
     // SPARK-47329 - for stateful queries that perform multiple operations on the dataframe, it is
     // highly recommended to persist the dataframe to prevent state stores from reloading

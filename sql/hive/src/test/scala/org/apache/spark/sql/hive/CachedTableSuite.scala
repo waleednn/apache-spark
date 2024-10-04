@@ -34,6 +34,7 @@ import org.apache.spark.util.Utils
 
 class CachedTableSuite extends QueryTest with SQLTestUtils with TestHiveSingleton {
   import hiveContext._
+  import org.apache.spark.sql.util.EmptyRelationImplicit._
 
   def rddIdOf(tableName: String): Int = {
     val plan = table(tableName).queryExecution.sparkPlan

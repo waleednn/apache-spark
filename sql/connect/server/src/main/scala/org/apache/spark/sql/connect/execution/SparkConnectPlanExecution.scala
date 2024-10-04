@@ -68,6 +68,7 @@ private[execution] class SparkConnectPlanExecution(executeHolder: ExecuteHolder)
       } else {
         DoNotCleanup
       }
+    import org.apache.spark.sql.util.EmptyRelationImplicit._
     val dataframe =
       Dataset.ofRows(
         sessionHolder.session,

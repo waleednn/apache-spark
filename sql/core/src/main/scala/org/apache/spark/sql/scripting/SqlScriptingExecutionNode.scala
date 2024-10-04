@@ -75,6 +75,7 @@ trait NonLeafStatementExec extends CompoundStatementExec {
       assert(!statement.isExecuted)
       statement.isExecuted = true
 
+      import org.apache.spark.sql.util.EmptyRelationImplicit._
       // DataFrame evaluates to True if it is single row, single column
       //  of boolean type with value True.
       val df = Dataset.ofRows(session, statement.parsedPlan)

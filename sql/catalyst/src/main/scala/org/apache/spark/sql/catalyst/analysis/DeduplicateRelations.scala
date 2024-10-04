@@ -36,7 +36,19 @@ import org.apache.spark.sql.catalyst.trees.TreePattern._
 case class RelationWrapper(cls: Class[_], outputAttrIds: Seq[Long])
 
 object DeduplicateRelations extends Rule[LogicalPlan] {
-  override def apply(plan: LogicalPlan): LogicalPlan = {
+
+  override def apply(plan: LogicalPlan): LogicalPlan = plan match {
+    case SkipDedupRuleMarker(child) => AnalysisContext.setDedupRelatiionSkipFlag(true)
+        child
+
+    case _ => if (AnalysisContext.get.skipDedupRelations) {
+          plan
+        } else {
+          applyInternal(plan)
+        }
+  }
+
+  def applyInternal(plan: LogicalPlan): LogicalPlan = {
     val newPlan = renewDuplicatedRelations(mutable.HashSet.empty, plan)._1
 
     // Wait for `ResolveMissingReferences` to resolve missing attributes first

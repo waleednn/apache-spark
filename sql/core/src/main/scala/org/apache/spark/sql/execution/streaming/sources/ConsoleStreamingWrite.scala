@@ -66,6 +66,7 @@ class ConsoleWrite(schema: StructType, options: CaseInsensitiveStringMap)
     println(printMessage)
     println("-------------------------------------------")
     // scalastyle:off println
+    import org.apache.spark.sql.util.EmptyRelationImplicit._
     Dataset.ofRows(spark, LocalRelation(toAttributes(schema), rows.toImmutableArraySeq))
       .show(numRowsToShow, isTruncated)
   }

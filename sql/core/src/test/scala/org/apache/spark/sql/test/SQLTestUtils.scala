@@ -45,6 +45,7 @@ import org.apache.spark.sql.execution.FilterExec
 import org.apache.spark.sql.execution.adaptive.DisableAdaptiveExecution
 import org.apache.spark.sql.execution.datasources.DataSourceUtils
 import org.apache.spark.sql.internal.SQLConf
+import org.apache.spark.sql.util.EmptyRelationImplicit
 import org.apache.spark.util.ArrayImplicits._
 import org.apache.spark.util.UninterruptibleThread
 import org.apache.spark.util.Utils
@@ -225,7 +226,8 @@ private[sql] trait SQLTestUtilsBase
   extends Eventually
   with BeforeAndAfterAll
   with SQLTestData
-  with PlanTestBase { self: Suite =>
+  with PlanTestBase
+  with EmptyRelationImplicit{ self: Suite =>
 
   protected def sparkContext = spark.sparkContext
 
@@ -239,7 +241,7 @@ private[sql] trait SQLTestUtilsBase
    * This is because we create the `SparkSession` immediately before the first test is run,
    * but the implicits import is needed in the constructor.
    */
-  protected object testImplicits extends SQLImplicits {
+  protected object testImplicits extends SQLImplicits with EmptyRelationImplicit {
     override protected def session: SparkSession = self.spark
     implicit def toRichColumn(c: Column): SparkSession#RichColumn = session.RichColumn(c)
   }

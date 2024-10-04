@@ -27,6 +27,7 @@ import org.apache.spark.sql.Dataset
 import org.apache.spark.sql.connect.common.{DataTypeProtoConverter, InvalidPlanInput, StorageLevelProtoConverter}
 import org.apache.spark.sql.connect.planner.SparkConnectPlanner
 import org.apache.spark.sql.execution.{CodegenMode, CostMode, ExtendedMode, FormattedMode, SimpleMode}
+import org.apache.spark.sql.util.EmptyRelationImplicit._
 import org.apache.spark.util.ArrayImplicits._
 
 private[connect] class SparkConnectAnalyzeHandler(

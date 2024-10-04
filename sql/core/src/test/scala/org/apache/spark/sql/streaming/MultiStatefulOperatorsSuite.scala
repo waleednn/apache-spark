@@ -47,13 +47,14 @@ class MultiStatefulOperatorsSuite
   test("window agg -> window agg, append mode") {
     val inputData = MemoryStream[Int]
 
-    val stream = inputData.toDF()
+    val x = inputData.toDF()
       .withColumn("eventTime", timestamp_seconds($"value"))
       .withWatermark("eventTime", "0 seconds")
       .groupBy(window($"eventTime", "5 seconds").as("window"))
       .agg(count("*").as("count"))
       .groupBy(window($"window", "10 seconds"))
-      .agg(count("*").as("count"), sum("count").as("sum"))
+
+   val stream  = x.agg(count("*").as("count"), sum("count").as("sum"))
       .select($"window".getField("start").cast("long").as[Long],
         $"count".as[Long], $"sum".as[Long])
 

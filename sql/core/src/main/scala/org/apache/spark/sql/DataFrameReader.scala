@@ -361,6 +361,7 @@ class DataFrameReader private[sql](sparkSession: SparkSession)
 
   /** @inheritdoc */
   def table(tableName: String): DataFrame = {
+    import org.apache.spark.sql.util.EmptyRelationImplicit._
     assertNoSpecifiedSchema("table")
     val multipartIdentifier =
       sparkSession.sessionState.sqlParser.parseMultipartIdentifier(tableName)

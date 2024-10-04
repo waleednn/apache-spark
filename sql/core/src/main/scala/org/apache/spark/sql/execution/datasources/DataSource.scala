@@ -511,6 +511,7 @@ case class DataSource(
               dataSource.toString, StructField(attr.toString, attr.dataType))
           }
         }
+        import org.apache.spark.sql.util.EmptyRelationImplicit._
         dataSource.createRelation(
           sparkSession.sqlContext, mode, caseInsensitiveOptions, Dataset.ofRows(sparkSession, data))
       case format: FileFormat =>

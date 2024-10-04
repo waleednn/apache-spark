@@ -41,6 +41,7 @@ import org.apache.spark.sql.execution.streaming.StreamingRelation
 import org.apache.spark.sql.sources.StreamSourceProvider
 import org.apache.spark.sql.types.StructType
 import org.apache.spark.sql.util.CaseInsensitiveStringMap
+import org.apache.spark.sql.util.EmptyRelationImplicit._
 
 /**
  * Interface used to load a streaming `Dataset` from external storage systems (e.g. file systems,

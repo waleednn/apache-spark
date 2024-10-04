@@ -78,9 +78,10 @@ private[sql] object Dataset {
   val COL_POS_KEY = "__col_position"
   val DATASET_ID_TAG = TreeNodeTag[HashSet[Long]]("dataset_id")
 
-  def apply[T: Encoder](sparkSession: SparkSession, logicalPlan: LogicalPlan): Dataset[T] = {
+  def apply[T: Encoder](sparkSession: SparkSession, logicalPlan: LogicalPlan)
+    (implicit  withRelations: Set[RelationWrapper]): Dataset[T] = {
     val encoder = implicitly[Encoder[T]]
-    val dataset = new Dataset(sparkSession, logicalPlan, encoder)
+    val dataset = new Dataset(sparkSession, logicalPlan, encoder)(withRelations)
     // Eagerly bind the encoder so we verify that the encoder matches the underlying
     // schema. The user will get an error if this is not the case.
     // optimization: it is guaranteed that [[InternalRow]] can be converted to [[Row]] so
@@ -92,9 +93,10 @@ private[sql] object Dataset {
     dataset
   }
 
-  def ofRows(sparkSession: SparkSession, logicalPlan: LogicalPlan): DataFrame =
+  def ofRows(sparkSession: SparkSession, logicalPlan: LogicalPlan)
+    (implicit withRelations: Set[RelationWrapper]): DataFrame =
     sparkSession.withActive {
-      val qe = sparkSession.sessionState.executePlan(logicalPlan)
+      val qe = sparkSession.sessionState.executePlan(logicalPlan)(withRelations)
       qe.assertAnalyzed()
       new Dataset[Row](qe, RowEncoder.encoderFor(qe.analyzed.schema))
   }
@@ -102,10 +104,12 @@ private[sql] object Dataset {
   def ofRows(
       sparkSession: SparkSession,
       logicalPlan: LogicalPlan,
-      shuffleCleanupMode: ShuffleCleanupMode): DataFrame =
+      shuffleCleanupMode: ShuffleCleanupMode
+      )(implicit withRelations: Set[RelationWrapper]): DataFrame =
     sparkSession.withActive {
       val qe = new QueryExecution(
-        sparkSession, logicalPlan, shuffleCleanupMode = shuffleCleanupMode)
+        sparkSession, logicalPlan, withRelations = withRelations,
+        shuffleCleanupMode = shuffleCleanupMode)
       qe.assertAnalyzed()
       new Dataset[Row](qe, RowEncoder.encoderFor(qe.analyzed.schema))
     }
@@ -115,10 +119,12 @@ private[sql] object Dataset {
       sparkSession: SparkSession,
       logicalPlan: LogicalPlan,
       tracker: QueryPlanningTracker,
-      shuffleCleanupMode: ShuffleCleanupMode = DoNotCleanup)
+      shuffleCleanupMode: ShuffleCleanupMode = DoNotCleanup
+      )(implicit withRelations: Set[RelationWrapper])
     : DataFrame = sparkSession.withActive {
     val qe = new QueryExecution(
-      sparkSession, logicalPlan, tracker, shuffleCleanupMode = shuffleCleanupMode)
+      sparkSession, logicalPlan, tracker, withRelations = withRelations,
+      shuffleCleanupMode = shuffleCleanupMode)
     qe.assertAnalyzed()
     new Dataset[Row](qe, RowEncoder.encoderFor(qe.analyzed.schema))
   }
@@ -219,6 +225,8 @@ class Dataset[T] private[sql](
   type DS[U] = Dataset[U]
   type RGD = RelationalGroupedDataset
 
+  private implicit val withRelations: Set[RelationWrapper] = queryExecution.getRelations
+
   @transient lazy val sparkSession: SparkSession = {
     if (queryExecution == null || queryExecution.sparkSession == null) {
       throw QueryExecutionErrors.transformationsAndActionsNotInvokedByDriverError()
@@ -236,12 +244,14 @@ class Dataset[T] private[sql](
   // Note for Spark contributors: if adding or updating any action in `Dataset`, please make sure
   // you wrap it with `withNewExecutionId` if this actions doesn't call other action.
 
-  def this(sparkSession: SparkSession, logicalPlan: LogicalPlan, encoder: Encoder[T]) = {
-    this(sparkSession.sessionState.executePlan(logicalPlan), encoder)
+  def this(sparkSession: SparkSession, logicalPlan: LogicalPlan, encoder: Encoder[T])
+    (implicit  withRelations: Set[RelationWrapper]) = {
+    this(sparkSession.sessionState.executePlan(logicalPlan)( withRelations), encoder)
   }
 
-  def this(sqlContext: SQLContext, logicalPlan: LogicalPlan, encoder: Encoder[T]) = {
-    this(sqlContext.sparkSession, logicalPlan, encoder)
+  def this(sqlContext: SQLContext, logicalPlan: LogicalPlan, encoder: Encoder[T],
+    withRelations: Set[RelationWrapper]) = {
+    this(sqlContext.sparkSession, logicalPlan, encoder) (withRelations)
   }
 
   @transient private[sql] val logicalPlan: LogicalPlan = {
@@ -493,7 +503,7 @@ class Dataset[T] private[sql](
   def to(schema: StructType): DataFrame = withPlan {
     val replaced = CharVarcharUtils.failIfHasCharVarchar(schema).asInstanceOf[StructType]
     Project.matchSchema(logicalPlan, replaced, sparkSession.sessionState.conf)
-  }
+  }(this.queryExecution.getRelations)
 
   /** @inheritdoc */
   @scala.annotation.varargs
@@ -594,15 +604,17 @@ class Dataset[T] private[sql](
   /** @inheritdoc */
   def join(right: Dataset[_]): DataFrame = withPlan {
     Join(logicalPlan, right.logicalPlan, joinType = Inner, None, JoinHint.NONE)
-  }
+  }(getCombinedRelations(right.queryExecution))
 
   /** @inheritdoc */
   def join(right: Dataset[_], usingColumns: Seq[String], joinType: String): DataFrame = {
+    val combinedRelations = this.getCombinedRelations(right.queryExecution)
     // Analyze the self join. The assumption is that the analyzer will disambiguate left vs right
     // by creating a new instance for one of the branch.
-    val joined = sparkSession.sessionState.executePlan(
-      Join(logicalPlan, right.logicalPlan, joinType = JoinType(joinType), None, JoinHint.NONE))
-      .analyzed.asInstanceOf[Join]
+    val qe = sparkSession.sessionState.executePlan(
+      Join(logicalPlan, right.logicalPlan, joinType = JoinType(joinType), None,
+        JoinHint.NONE))(combinedRelations)
+    val joined = qe.analyzed.asInstanceOf[Join]
 
     withPlan {
       Join(
@@ -611,7 +623,7 @@ class Dataset[T] private[sql](
         UsingJoin(JoinType(joinType), usingColumns.toIndexedSeq),
         None,
         JoinHint.NONE)
-    }
+    }(qe.getRelations)
   }
 
   /**
@@ -633,7 +645,8 @@ class Dataset[T] private[sql](
     // After the cloning, left and right side will have distinct expression ids.
     val plan = withPlan(
       Join(logicalPlan, right.logicalPlan,
-        JoinType(joinType), joinExprs.map(_.expr), JoinHint.NONE))
+        JoinType(joinType), joinExprs.map(_.expr), JoinHint.NONE))(
+          this.getCombinedRelations(right.queryExecution))
       .queryExecution.analyzed.asInstanceOf[Join]
 
     // If auto self join alias is disabled, return the plan.
@@ -659,25 +672,26 @@ class Dataset[T] private[sql](
   def join(right: Dataset[_], joinExprs: Column, joinType: String): DataFrame = {
     withPlan {
       resolveSelfJoinCondition(right, Some(joinExprs), joinType)
-    }
+    }(this.getCombinedRelations(right.queryExecution))
   }
 
   /** @inheritdoc */
   def crossJoin(right: Dataset[_]): DataFrame = withPlan {
     Join(logicalPlan, right.logicalPlan, joinType = Cross, None, JoinHint.NONE)
-  }
+  }(this.getCombinedRelations(right.queryExecution))
 
   /** @inheritdoc */
   def joinWith[U](other: Dataset[U], condition: Column, joinType: String): Dataset[(T, U)] = {
     // Creates a Join node and resolve it first, to get join condition resolved, self-join resolved,
     // etc.
-    val joined = sparkSession.sessionState.executePlan(
+    val joinedQe = sparkSession.sessionState.executePlan(
       Join(
         this.logicalPlan,
         other.logicalPlan,
         JoinType(joinType),
         Some(condition.expr),
-        JoinHint.NONE)).analyzed.asInstanceOf[Join]
+        JoinHint.NONE))(this.getCombinedRelations(other.queryExecution))
+    val joined = joinedQe.analyzed.asInstanceOf[Join]
 
     val leftEncoder = agnosticEncoderFor(encoder)
     val rightEncoder = agnosticEncoderFor(other.encoder)
@@ -689,7 +703,7 @@ class Dataset[T] private[sql](
       sparkSession.sessionState.analyzer.resolver,
       leftEncoder.isStruct,
       rightEncoder.isStruct)
-    new Dataset(sparkSession, joinWith, joinEncoder)
+    new Dataset(sparkSession, joinWith, joinEncoder)(joinedQe.getRelations)
   }
 
   // TODO(SPARK-22947): Fix the DataFrame API.
@@ -741,7 +755,7 @@ class Dataset[T] private[sql](
         allowExactMatches,
         AsOfJoinDirection(direction)
       )
-    }
+    }(this.getCombinedRelations(other.queryExecution))
   }
 
   /** @inheritdoc */
@@ -1048,7 +1062,7 @@ class Dataset[T] private[sql](
   /** @inheritdoc */
   def union(other: Dataset[T]): Dataset[T] = withSetOperator {
     combineUnions(Union(logicalPlan, other.logicalPlan))
-  }
+  }(this.getCombinedRelations(other.queryExecution))
 
   /** @inheritdoc */
   def unionByName(other: Dataset[T], allowMissingColumns: Boolean): Dataset[T] = {
@@ -1056,30 +1070,31 @@ class Dataset[T] private[sql](
       // We need to resolve the by-name Union first, as the underlying Unions are already resolved
       // and we can only combine adjacent Unions if they are all resolved.
       val resolvedUnion = sparkSession.sessionState.executePlan(
-        Union(logicalPlan :: other.logicalPlan :: Nil, byName = true, allowMissingColumns))
+        Union(logicalPlan :: other.logicalPlan :: Nil, byName = true, allowMissingColumns))(
+        this.getCombinedRelations(other.queryExecution))
       combineUnions(resolvedUnion.analyzed)
-    }
+    }(this.getCombinedRelations(other.queryExecution))
   }
 
   /** @inheritdoc */
   def intersect(other: Dataset[T]): Dataset[T] = withSetOperator {
     Intersect(logicalPlan, other.logicalPlan, isAll = false)
-  }
+  }(this.getCombinedRelations(other.queryExecution))
 
   /** @inheritdoc */
   def intersectAll(other: Dataset[T]): Dataset[T] = withSetOperator {
     Intersect(logicalPlan, other.logicalPlan, isAll = true)
-  }
+  }(this.getCombinedRelations(other.queryExecution))
 
   /** @inheritdoc */
   def except(other: Dataset[T]): Dataset[T] = withSetOperator {
     Except(logicalPlan, other.logicalPlan, isAll = false)
-  }
+  }(this.getCombinedRelations(other.queryExecution))
 
   /** @inheritdoc */
   def exceptAll(other: Dataset[T]): Dataset[T] = withSetOperator {
     Except(logicalPlan, other.logicalPlan, isAll = true)
-  }
+  }(this.getCombinedRelations(other.queryExecution))
 
   /** @inheritdoc */
   def sample(withReplacement: Boolean, fraction: Double, seed: Long): Dataset[T] = {
@@ -2198,8 +2213,9 @@ class Dataset[T] private[sql](
   }
 
   /** A convenient function to wrap a logical plan and produce a DataFrame. */
-  @inline private def withPlan(logicalPlan: LogicalPlan): DataFrame = {
-    Dataset.ofRows(sparkSession, logicalPlan)
+  @inline private def withPlan(logicalPlan: LogicalPlan)
+    (implicit  withRelations: Set[RelationWrapper]): DataFrame = {
+    Dataset.ofRows(sparkSession, logicalPlan)(withRelations)
   }
 
   /** A convenient function to wrap a logical plan and produce a Dataset. */
@@ -2208,11 +2224,13 @@ class Dataset[T] private[sql](
   }
 
   /** A convenient function to wrap a set based logical plan and produce a Dataset. */
-  @inline private def withSetOperator[U : Encoder](logicalPlan: LogicalPlan): Dataset[U] = {
+  @inline private def withSetOperator[U : Encoder](logicalPlan: LogicalPlan)
+    (wr: Set[RelationWrapper]): Dataset[U] = {
     if (isUnTyped) {
       // Set operators widen types (change the schema), so we cannot reuse the row encoder.
-      Dataset.ofRows(sparkSession, logicalPlan).asInstanceOf[Dataset[U]]
+      Dataset.ofRows(sparkSession, logicalPlan)(wr).asInstanceOf[Dataset[U]]
     } else {
+      implicit val withRelations: Set[RelationWrapper] = wr
       Dataset(sparkSession, logicalPlan)
     }
   }
@@ -2247,5 +2265,14 @@ class Dataset[T] private[sql](
   // This is only used in tests, for now.
   private[sql] def toArrowBatchRdd: RDD[Array[Byte]] = {
     toArrowBatchRdd(queryExecution.executedPlan)
+  }
+
+  private def getCombinedRelations(thatQe: QueryExecution): Set[RelationWrapper] = {
+    val thatRelations = thatQe.getRelations
+    if (this.queryExecution.getRelations.exists(thatRelations.contains)) {
+      Set.empty
+    } else {
+      this.queryExecution.getRelations ++ thatRelations
+    }
   }
 }

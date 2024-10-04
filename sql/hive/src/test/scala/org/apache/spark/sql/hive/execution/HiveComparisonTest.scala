@@ -229,6 +229,7 @@ abstract class HiveComparisonTest extends SparkFunSuite with BeforeAndAfterAll {
       reset: Boolean = true,
       tryWithoutResettingFirst: Boolean = false,
       skip: Boolean = false): Unit = {
+    import org.apache.spark.sql.util.EmptyRelationImplicit._
     // testCaseName must not contain ':', which is not allowed to appear in a filename of Windows
     assert(!testCaseName.contains(":"))
 

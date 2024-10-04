@@ -164,6 +164,7 @@ final class DataStreamWriter[T] private[sql](ds: Dataset[T]) extends api.DataStr
         Array(ClusterByTransform(colNames.map(col => FieldReference(col)))).toImmutableArraySeq
       }.getOrElse(partitioningColumns.getOrElse(Nil).asTransforms.toImmutableArraySeq)
 
+      import org.apache.spark.sql.util.EmptyRelationImplicit._
       /**
        * Note, currently the new table creation by this API doesn't fully cover the V2 table.
        * TODO (SPARK-33638): Full support of v2 table creation
@@ -225,6 +226,7 @@ final class DataStreamWriter[T] private[sql](ds: Dataset[T]) extends api.DataStr
         throw QueryCompilationErrors.queryNameNotSpecifiedForMemorySinkError()
       }
       val sink = new MemorySink()
+      import org.apache.spark.sql.util.EmptyRelationImplicit._
       val resultDf = Dataset.ofRows(ds.sparkSession,
         MemoryPlan(sink, DataTypeUtils.toAttributes(ds.schema)))
       val recoverFromCheckpoint = outputMode == OutputMode.Complete()

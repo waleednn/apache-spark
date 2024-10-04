@@ -144,6 +144,7 @@ private[sql] object DataSourceV2Utils extends Logging {
         (tbl, None, None)
     }
     import org.apache.spark.sql.execution.datasources.v2.DataSourceV2Implicits._
+    import org.apache.spark.sql.util.EmptyRelationImplicit._
     table match {
       case _: SupportsRead if table.supports(BATCH_READ) =>
         Option(Dataset.ofRows(

@@ -28,7 +28,7 @@ import org.apache.spark.sql.execution.QueryExecution
 import org.apache.spark.sql.expressions.ReduceAggregator
 import org.apache.spark.sql.internal.TypedAggUtils.{aggKeyColumn, withInputType}
 import org.apache.spark.sql.streaming.{GroupState, GroupStateTimeout, OutputMode, StatefulProcessor, StatefulProcessorWithInitialState, TimeMode}
-
+import org.apache.spark.sql.util.EmptyRelationImplicit._
 /**
  * A [[Dataset]] has been logically grouped by a user specified grouping key.  Users should not
  * construct a [[KeyValueGroupedDataset]] directly, but should instead call `groupByKey` on
