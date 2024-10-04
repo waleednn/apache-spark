@@ -1416,8 +1416,8 @@ class SparkConnectPlanner(
       localMap.foreach { case (key, value) => reader.option(key, value) }
       reader
     }
-    def ds: Dataset[String] = Dataset(session, transformRelation(rel.getInput))(
-      Encoders.STRING, withRelations)
+    def ds: Dataset[String] =
+      Dataset(session, transformRelation(rel.getInput))(Encoders.STRING, withRelations)
 
     rel.getFormat match {
       case ParseFormat.PARSE_FORMAT_CSV =>
