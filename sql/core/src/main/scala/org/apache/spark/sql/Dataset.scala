@@ -670,6 +670,7 @@ class Dataset[T] private[sql](
 
   /** @inheritdoc */
   def join(right: Dataset[_], joinExprs: Column, joinType: String): DataFrame = {
+    // TODO: asif The joinExprs can contain subqueries ?
     withPlan {
       resolveSelfJoinCondition(right, Some(joinExprs), joinType)
     }(this.getCombinedRelations(right.queryExecution))
@@ -844,7 +845,7 @@ class Dataset[T] private[sql](
       case other => other
     }
     Project(untypedCols.map(_.named), logicalPlan)
-  }
+  }(checkForSubquery(cols.map(_.expr)))
 
   /** @inheritdoc */
   def select[U1](c1: TypedColumn[T, U1]): Dataset[U1] = {
@@ -863,19 +864,25 @@ class Dataset[T] private[sql](
         Project(projectList, project)
       case _ => project
     }
-    new Dataset[U1](sparkSession, plan, encoder)
+    new Dataset[U1](sparkSession, plan, encoder)(checkForSubquery(Seq(tc1)))
   }
 
   /** @inheritdoc */
   protected def selectUntyped(columns: TypedColumn[_, _]*): Dataset[_] = {
     val encoders = columns.map(c => agnosticEncoderFor(c.encoder))
     val namedColumns = columns.map(c => withInputType(c.named, exprEnc, logicalPlan.output))
-    new Dataset(sparkSession, Project(namedColumns, logicalPlan), ProductEncoder.tuple(encoders))
+    new Dataset(
+      sparkSession,
+      Project(namedColumns, logicalPlan),
+      ProductEncoder.tuple(encoders))(checkForSubquery(columns.map(_.expr)))
   }
 
   /** @inheritdoc */
-  def filter(condition: Column): Dataset[T] = withTypedPlan {
-    Filter(condition.expr, logicalPlan)
+  def filter(condition: Column): Dataset[T] = {
+    implicit val withRelations: Set[RelationWrapper] = checkForSubquery(Seq(condition.expr))
+    withTypedPlan {
+      Filter(condition.expr, logicalPlan)
+    }
   }
 
   /** @inheritdoc */
@@ -2219,7 +2226,8 @@ class Dataset[T] private[sql](
   }
 
   /** A convenient function to wrap a logical plan and produce a Dataset. */
-  @inline private def withTypedPlan[U : Encoder](logicalPlan: LogicalPlan): Dataset[U] = {
+  @inline private def withTypedPlan[U : Encoder](logicalPlan: LogicalPlan)(
+     implicit withRelations: Set[RelationWrapper]): Dataset[U] = {
     Dataset(sparkSession, logicalPlan)
   }
 
@@ -2275,4 +2283,21 @@ class Dataset[T] private[sql](
       this.queryExecution.getRelations ++ thatRelations
     }
   }
+
+  private def checkForSubquery(exprs: Seq[Expression]): Set[RelationWrapper] = {
+    if (exprs.exists(_.containsAnyPattern(
+      TreePattern.IN_SUBQUERY,
+      TreePattern.DYNAMIC_PRUNING_SUBQUERY,
+      TreePattern.EXISTS_SUBQUERY,
+      TreePattern.FUNCTION_TABLE_RELATION_ARGUMENT_EXPRESSION,
+      TreePattern.LATERAL_SUBQUERY,
+      TreePattern.LIST_SUBQUERY,
+      TreePattern.SCALAR_SUBQUERY
+       ))) {
+      Set.empty
+    } else {
+      this.queryExecution.getRelations
+    }
+  }
+
 }
