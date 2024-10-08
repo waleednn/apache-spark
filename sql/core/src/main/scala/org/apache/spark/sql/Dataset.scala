@@ -871,9 +871,7 @@ class Dataset[T] private[sql](
   protected def selectUntyped(columns: TypedColumn[_, _]*): Dataset[_] = {
     val encoders = columns.map(c => agnosticEncoderFor(c.encoder))
     val namedColumns = columns.map(c => withInputType(c.named, exprEnc, logicalPlan.output))
-    new Dataset(
-      sparkSession,
-      Project(namedColumns, logicalPlan),
+    new Dataset(sparkSession, Project(namedColumns, logicalPlan),
       ProductEncoder.tuple(encoders))(checkForSubquery(columns.map(_.expr)))
   }
 

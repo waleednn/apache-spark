@@ -62,7 +62,6 @@ import org.apache.spark.sql.util.ExecutionListenerManager
 import org.apache.spark.util.{CallSite, SparkFileUtils, ThreadUtils, Utils}
 import org.apache.spark.util.ArrayImplicits._
 
-
 /**
  * The entry point to programming Spark with the Dataset and DataFrame API.
  *

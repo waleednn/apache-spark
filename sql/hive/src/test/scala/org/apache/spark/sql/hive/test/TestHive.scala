@@ -176,6 +176,7 @@ private[hive] class TestHiveSparkSession(
     @transient private val parentSessionState: Option[SessionState],
     private val loadTestTables: Boolean)
   extends SparkSession(sc) with Logging { self =>
+
   def this(sc: SparkContext, loadTestTables: Boolean) = {
     this(
       sc,
@@ -237,7 +238,6 @@ private[hive] class TestHiveSparkSession(
   override def sql(sqlText: String): DataFrame = withActive {
     val plan = sessionState.sqlParser.parsePlan(sqlText)
     implicit val withRelations: Set[RelationWrapper] = Set.empty
-
     Dataset.ofRows(self, plan)
   }
 
@@ -656,7 +656,8 @@ private[hive] object TestHiveContext {
 private[sql] class TestHiveSessionStateBuilder(
     session: SparkSession,
     state: Option[SessionState])
-  extends HiveSessionStateBuilder(session, state) with WithTestConf {
+  extends HiveSessionStateBuilder(session, state)
+  with WithTestConf {
 
   override def overrideConfs: Map[String, String] = TestHiveContext.overrideConfs
 

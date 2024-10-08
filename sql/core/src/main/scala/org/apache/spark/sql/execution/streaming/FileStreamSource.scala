@@ -315,7 +315,6 @@ class FileStreamSource(
         partitionColumns = partitionColumns,
         className = fileFormatClassName,
         options = optionsForInnerDataSource)
-
     implicit val withRelations: Set[RelationWrapper] = Set.empty
     Dataset.ofRows(sparkSession, LogicalRelation(newDataSource.resolveRelation(
       checkFilesExist = false), isStreaming = true))

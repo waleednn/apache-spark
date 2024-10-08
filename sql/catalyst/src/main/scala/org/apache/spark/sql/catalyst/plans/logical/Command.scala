@@ -23,7 +23,6 @@ import org.apache.spark.sql.catalyst.plans.QueryPlan
 import org.apache.spark.sql.catalyst.trees.{BinaryLike, LeafLike, UnaryLike}
 import org.apache.spark.sql.catalyst.trees.TreePattern.{COMMAND, TreePattern}
 
-
 /**
  * A logical node that represents a non-query command to be executed by the system.  For example,
  * commands can be used by parsers to represent DDL operations.  Commands, unlike queries, are

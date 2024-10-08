@@ -63,6 +63,7 @@ import org.apache.spark.util.Utils
 private[sql] trait SQLTestUtils extends SparkFunSuite with SQLTestUtilsBase with PlanTest {
   // Whether to materialize all test data before the first test is run
   private var loadTestDataBeforeTests = false
+
   protected override def beforeAll(): Unit = {
     super.beforeAll()
     if (loadTestDataBeforeTests) {
@@ -225,7 +226,9 @@ private[sql] trait SQLTestUtilsBase
   with BeforeAndAfterAll
   with SQLTestData
   with PlanTestBase{ self: Suite =>
+
   implicit val withRelations: Set[RelationWrapper] = Set.empty
+
   protected def sparkContext = spark.sparkContext
 
   // Shorthand for running a query using our SparkSession
