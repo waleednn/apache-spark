@@ -97,7 +97,6 @@ class DeduplicateRelationsRuleSkipTest extends QueryTest with SharedSparkSession
       DedupFlagVerifierRule.expectedSkipFlag.set(None)
     }
   }
-
 }
 
 class CustomRuleTestSession(sparkConf: SparkConf) extends TestSparkSession(sparkConf) {
