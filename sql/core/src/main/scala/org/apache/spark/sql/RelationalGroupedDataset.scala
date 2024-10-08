@@ -58,7 +58,7 @@ class RelationalGroupedDataset protected[sql](
   import RelationalGroupedDataset._
   import df.sparkSession._
 
-  implicit val withRelations: Set[RelationWrapper] = df.queryExecution.getRelations
+  private implicit def getRelations: Set[RelationWrapper] = df.queryExecution.getRelations
 
   override protected def toDF(aggCols: Seq[Column]): DataFrame = {
     val aggExprs = aggCols.map(expression).map { e =>

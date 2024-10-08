@@ -99,7 +99,7 @@ class SparkSession private(
     @transient private val parentManagedJobTags: Map[String, String])
   extends api.SparkSession with Logging { self =>
 
-  implicit val withRelations: Set[RelationWrapper] = Set.empty
+  private implicit val withRelations: Set[RelationWrapper] = Set.empty
   // The call site where this SparkSession was constructed.
   private val creationSite: CallSite = Utils.getCallSite()
 

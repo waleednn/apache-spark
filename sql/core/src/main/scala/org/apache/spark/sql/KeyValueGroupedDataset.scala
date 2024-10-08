@@ -45,13 +45,14 @@ class KeyValueGroupedDataset[K, V] private[sql](
   extends api.KeyValueGroupedDataset[K, V] {
   type KVDS[KY, VL] = KeyValueGroupedDataset[KY, VL]
 
-  private implicit lazy val withRelations: Set[RelationWrapper] = this.queryExecution.getRelations
   private implicit def kEncoderImpl: Encoder[K] = kEncoder
   private implicit def vEncoderImpl: Encoder[V] = vEncoder
 
   private def logicalPlan = queryExecution.analyzed
   private def sparkSession = queryExecution.sparkSession
   import queryExecution.sparkSession._
+
+  private implicit def getRelations: Set[RelationWrapper] = queryExecution.getRelations
 
   /** @inheritdoc */
   def keyAs[L : Encoder]: KeyValueGroupedDataset[L, V] =

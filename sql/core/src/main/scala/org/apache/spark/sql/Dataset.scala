@@ -225,7 +225,7 @@ class Dataset[T] private[sql](
   type DS[U] = Dataset[U]
   type RGD = RelationalGroupedDataset
 
-  private implicit val withRelations: Set[RelationWrapper] = queryExecution.getRelations
+  private implicit def withRelations: Set[RelationWrapper] = queryExecution.getRelations
 
   @transient lazy val sparkSession: SparkSession = {
     if (queryExecution == null || queryExecution.sparkSession == null) {

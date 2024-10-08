@@ -236,6 +236,8 @@ private[hive] class TestHiveSparkSession(
    */
   override def sql(sqlText: String): DataFrame = withActive {
     val plan = sessionState.sqlParser.parsePlan(sqlText)
+    implicit val withRelations: Set[RelationWrapper] = Set.empty
+
     Dataset.ofRows(self, plan)
   }
 
