@@ -21,14 +21,17 @@ import java.io.File
 import java.net.URI
 import java.nio.file.Files
 import java.util.{Locale, UUID}
+
 import scala.concurrent.duration._
 import scala.jdk.CollectionConverters._
 import scala.language.implicitConversions
 import scala.util.control.NonFatal
+
 import org.apache.hadoop.fs.Path
 import org.scalactic.source.Position
 import org.scalatest.{BeforeAndAfterAll, Suite, Tag}
 import org.scalatest.concurrent.Eventually
+
 import org.apache.spark.SparkFunSuite
 import org.apache.spark.sql._
 import org.apache.spark.sql.catalyst.FunctionIdentifier

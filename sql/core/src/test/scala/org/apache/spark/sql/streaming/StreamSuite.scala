@@ -21,13 +21,16 @@ import java.io.{File, InterruptedIOException, UncheckedIOException}
 import java.nio.channels.ClosedByInterruptException
 import java.time.ZoneId
 import java.util.concurrent.{CountDownLatch, ExecutionException, TimeUnit}
+
 import scala.concurrent.TimeoutException
 import scala.reflect.ClassTag
 import scala.util.control.ControlThrowable
+
 import com.google.common.util.concurrent.UncheckedExecutionException
 import org.apache.commons.io.FileUtils
 import org.apache.hadoop.conf.Configuration
 import org.scalatest.time.SpanSugar._
+
 import org.apache.spark.{SparkConf, SparkContext, TaskContext, TestUtils}
 import org.apache.spark.scheduler.{SparkListener, SparkListenerJobStart}
 import org.apache.spark.sql._

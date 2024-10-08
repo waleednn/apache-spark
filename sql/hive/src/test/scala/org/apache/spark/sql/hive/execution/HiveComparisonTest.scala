@@ -21,8 +21,11 @@ import java.io._
 import java.nio.charset.StandardCharsets
 import java.util
 import java.util.Locale
+
 import scala.util.control.NonFatal
+
 import org.scalatest.BeforeAndAfterAll
+
 import org.apache.spark.SparkFunSuite
 import org.apache.spark.sql.Dataset
 import org.apache.spark.sql.catalyst.analysis.RelationWrapper
