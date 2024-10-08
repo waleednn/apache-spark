@@ -81,7 +81,7 @@ private[sql] object Dataset {
   def apply[T: Encoder](sparkSession: SparkSession, logicalPlan: LogicalPlan)
     (implicit  withRelations: Set[RelationWrapper]): Dataset[T] = {
     val encoder = implicitly[Encoder[T]]
-    val dataset = new Dataset(sparkSession, logicalPlan, encoder)(withRelations)
+    val dataset = new Dataset(sparkSession, logicalPlan, encoder)
     // Eagerly bind the encoder so we verify that the encoder matches the underlying
     // schema. The user will get an error if this is not the case.
     // optimization: it is guaranteed that [[InternalRow]] can be converted to [[Row]] so
@@ -96,7 +96,7 @@ private[sql] object Dataset {
   def ofRows(sparkSession: SparkSession, logicalPlan: LogicalPlan)
     (implicit withRelations: Set[RelationWrapper]): DataFrame =
     sparkSession.withActive {
-      val qe = sparkSession.sessionState.executePlan(logicalPlan)(withRelations)
+      val qe = sparkSession.sessionState.executePlan(logicalPlan)
       qe.assertAnalyzed()
       new Dataset[Row](qe, RowEncoder.encoderFor(qe.analyzed.schema))
   }
@@ -246,7 +246,7 @@ class Dataset[T] private[sql](
 
   def this(sparkSession: SparkSession, logicalPlan: LogicalPlan, encoder: Encoder[T])
     (implicit  withRelations: Set[RelationWrapper]) = {
-    this(sparkSession.sessionState.executePlan(logicalPlan)( withRelations), encoder)
+    this(sparkSession.sessionState.executePlan(logicalPlan), encoder)
   }
 
   def this(sqlContext: SQLContext, logicalPlan: LogicalPlan, encoder: Encoder[T],
@@ -503,7 +503,7 @@ class Dataset[T] private[sql](
   def to(schema: StructType): DataFrame = withPlan {
     val replaced = CharVarcharUtils.failIfHasCharVarchar(schema).asInstanceOf[StructType]
     Project.matchSchema(logicalPlan, replaced, sparkSession.sessionState.conf)
-  }(this.queryExecution.getRelations)
+  }
 
   /** @inheritdoc */
   @scala.annotation.varargs
@@ -2233,13 +2233,13 @@ class Dataset[T] private[sql](
 
   /** A convenient function to wrap a set based logical plan and produce a Dataset. */
   @inline private def withSetOperator[U : Encoder](logicalPlan: LogicalPlan)
-    (wr: Set[RelationWrapper]): Dataset[U] = {
+    (withRelations: Set[RelationWrapper]): Dataset[U] = {
     if (isUnTyped) {
       // Set operators widen types (change the schema), so we cannot reuse the row encoder.
-      Dataset.ofRows(sparkSession, logicalPlan)(wr).asInstanceOf[Dataset[U]]
+      Dataset.ofRows(sparkSession, logicalPlan)(withRelations).asInstanceOf[Dataset[U]]
     } else {
-      implicit val withRelations: Set[RelationWrapper] = wr
-      Dataset(sparkSession, logicalPlan)
+      val encoder = implicitly[Encoder[U]]
+      Dataset(sparkSession, logicalPlan)(encoder, withRelations)
     }
   }
 

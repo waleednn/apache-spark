@@ -38,14 +38,12 @@ case class RelationWrapper(cls: Class[_], outputAttrIds: Seq[Long])
 object DeduplicateRelations extends Rule[LogicalPlan] {
 
   override def apply(plan: LogicalPlan): LogicalPlan = plan match {
-    case SkipDedupRuleMarker(child) => AnalysisContext.setDedupRelatiionSkipFlag(true)
+    case SkipDedupRelRuleMarker(child) => AnalysisContext.setDedupRelatiionSkipFlag(true)
         child
 
-    case _ => if (AnalysisContext.get.skipDedupRelations) {
-          plan
-        } else {
-          applyInternal(plan)
-        }
+    case _  if AnalysisContext.get.skipDedupRelations => plan
+
+    case _ => applyInternal(plan)
   }
 
   def applyInternal(plan: LogicalPlan): LogicalPlan = {

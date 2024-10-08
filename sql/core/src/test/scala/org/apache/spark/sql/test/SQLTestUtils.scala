@@ -21,21 +21,18 @@ import java.io.File
 import java.net.URI
 import java.nio.file.Files
 import java.util.{Locale, UUID}
-
 import scala.concurrent.duration._
 import scala.jdk.CollectionConverters._
 import scala.language.implicitConversions
 import scala.util.control.NonFatal
-
 import org.apache.hadoop.fs.Path
 import org.scalactic.source.Position
 import org.scalatest.{BeforeAndAfterAll, Suite, Tag}
 import org.scalatest.concurrent.Eventually
-
 import org.apache.spark.SparkFunSuite
 import org.apache.spark.sql._
 import org.apache.spark.sql.catalyst.FunctionIdentifier
-import org.apache.spark.sql.catalyst.analysis.NoSuchTableException
+import org.apache.spark.sql.catalyst.analysis.{NoSuchTableException, RelationWrapper}
 import org.apache.spark.sql.catalyst.catalog.SessionCatalog.DEFAULT_DATABASE
 import org.apache.spark.sql.catalyst.plans.PlanTest
 import org.apache.spark.sql.catalyst.plans.PlanTestBase
@@ -45,7 +42,6 @@ import org.apache.spark.sql.execution.FilterExec
 import org.apache.spark.sql.execution.adaptive.DisableAdaptiveExecution
 import org.apache.spark.sql.execution.datasources.DataSourceUtils
 import org.apache.spark.sql.internal.SQLConf
-import org.apache.spark.sql.util.EmptyRelationImplicit
 import org.apache.spark.util.ArrayImplicits._
 import org.apache.spark.util.UninterruptibleThread
 import org.apache.spark.util.Utils
@@ -64,7 +60,6 @@ import org.apache.spark.util.Utils
 private[sql] trait SQLTestUtils extends SparkFunSuite with SQLTestUtilsBase with PlanTest {
   // Whether to materialize all test data before the first test is run
   private var loadTestDataBeforeTests = false
-
   protected override def beforeAll(): Unit = {
     super.beforeAll()
     if (loadTestDataBeforeTests) {
@@ -226,9 +221,8 @@ private[sql] trait SQLTestUtilsBase
   extends Eventually
   with BeforeAndAfterAll
   with SQLTestData
-  with PlanTestBase
-  with EmptyRelationImplicit{ self: Suite =>
-
+  with PlanTestBase{ self: Suite =>
+  implicit val withRelations: Set[RelationWrapper] = Set.empty
   protected def sparkContext = spark.sparkContext
 
   // Shorthand for running a query using our SparkSession
@@ -241,7 +235,7 @@ private[sql] trait SQLTestUtilsBase
    * This is because we create the `SparkSession` immediately before the first test is run,
    * but the implicits import is needed in the constructor.
    */
-  protected object testImplicits extends SQLImplicits with EmptyRelationImplicit {
+  protected object testImplicits extends SQLImplicits {
     override protected def session: SparkSession = self.spark
     implicit def toRichColumn(c: Column): SparkSession#RichColumn = session.RichColumn(c)
   }

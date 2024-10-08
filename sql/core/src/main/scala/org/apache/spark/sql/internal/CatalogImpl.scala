@@ -40,7 +40,6 @@ import org.apache.spark.sql.execution.datasources.{DataSource, LogicalRelation}
 import org.apache.spark.sql.execution.datasources.v2.DataSourceV2Relation
 import org.apache.spark.sql.internal.connector.V1Function
 import org.apache.spark.sql.types.StructType
-import org.apache.spark.sql.util.EmptyRelationImplicit._
 import org.apache.spark.storage.StorageLevel
 import org.apache.spark.util.ArrayImplicits._
 
@@ -51,7 +50,7 @@ import org.apache.spark.util.ArrayImplicits._
 class CatalogImpl(sparkSession: SparkSession) extends Catalog {
 
   private def sessionCatalog: SessionCatalog = sparkSession.sessionState.catalog
-
+  implicit val withRelations: Set[RelationWrapper] = Set.empty
   /**
    * Helper function for parsing identifiers.
    * @param fallbackOnException if true, when parsing fails, return the original name.

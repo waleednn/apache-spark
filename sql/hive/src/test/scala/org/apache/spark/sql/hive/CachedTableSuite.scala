@@ -17,8 +17,9 @@
 
 package org.apache.spark.sql.hive
 
-import java.io.File
+import org.apache.spark.sql.catalyst.analysis.RelationWrapper
 
+import java.io.File
 import org.apache.spark.sql.{AnalysisException, Dataset, QueryTest, Row, SaveMode}
 import org.apache.spark.sql.catalyst.parser.ParseException
 import org.apache.spark.sql.execution.columnar.InMemoryTableScanExec
@@ -34,7 +35,6 @@ import org.apache.spark.util.Utils
 
 class CachedTableSuite extends QueryTest with SQLTestUtils with TestHiveSingleton {
   import hiveContext._
-  import org.apache.spark.sql.util.EmptyRelationImplicit._
 
   def rddIdOf(tableName: String): Int = {
     val plan = table(tableName).queryExecution.sparkPlan
@@ -320,6 +320,7 @@ class CachedTableSuite extends QueryTest with SQLTestUtils with TestHiveSingleto
 
   test("cache a table using CatalogFileIndex") {
     withTable("test") {
+      implicit val withRelations: Set[RelationWrapper] = Set.empty
       sql("CREATE TABLE test(i int) PARTITIONED BY (p int) STORED AS parquet")
       val tableMeta = spark.sharedState.externalCatalog.getTable("default", "test")
       val catalogFileIndex = new CatalogFileIndex(spark, tableMeta, 0)

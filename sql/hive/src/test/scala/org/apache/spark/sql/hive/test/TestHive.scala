@@ -45,7 +45,6 @@ import org.apache.spark.sql.hive._
 import org.apache.spark.sql.hive.client.HiveClient
 import org.apache.spark.sql.internal.{SessionState, SharedState, SQLConf, WithTestConf}
 import org.apache.spark.sql.internal.StaticSQLConf.{CATALOG_IMPLEMENTATION, WAREHOUSE_PATH}
-import org.apache.spark.sql.util.EmptyRelationImplicit
 import org.apache.spark.util.{ShutdownHookManager, Utils}
 
 // SPARK-3729: Test key required to check for initialization errors with config.
@@ -176,8 +175,7 @@ private[hive] class TestHiveSparkSession(
     @transient private val existingSharedState: Option[TestHiveSharedState],
     @transient private val parentSessionState: Option[SessionState],
     private val loadTestTables: Boolean)
-  extends SparkSession(sc) with Logging with EmptyRelationImplicit { self =>
-
+  extends SparkSession(sc) with Logging { self =>
   def this(sc: SparkContext, loadTestTables: Boolean) = {
     this(
       sc,
@@ -656,8 +654,7 @@ private[hive] object TestHiveContext {
 private[sql] class TestHiveSessionStateBuilder(
     session: SparkSession,
     state: Option[SessionState])
-  extends HiveSessionStateBuilder(session, state)
-  with WithTestConf with EmptyRelationImplicit {
+  extends HiveSessionStateBuilder(session, state) with WithTestConf {
 
   override def overrideConfs: Map[String, String] = TestHiveContext.overrideConfs
 

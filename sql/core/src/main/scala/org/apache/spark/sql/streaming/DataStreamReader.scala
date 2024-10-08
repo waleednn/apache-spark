@@ -23,7 +23,7 @@ import scala.jdk.CollectionConverters._
 
 import org.apache.spark.annotation.Evolving
 import org.apache.spark.sql.{api, DataFrame, Dataset, SparkSession}
-import org.apache.spark.sql.catalyst.analysis.UnresolvedRelation
+import org.apache.spark.sql.catalyst.analysis.{RelationWrapper, UnresolvedRelation}
 import org.apache.spark.sql.catalyst.streaming.StreamingRelationV2
 import org.apache.spark.sql.catalyst.types.DataTypeUtils.toAttributes
 import org.apache.spark.sql.catalyst.util.{CaseInsensitiveMap, CharVarcharUtils}
@@ -41,7 +41,6 @@ import org.apache.spark.sql.execution.streaming.StreamingRelation
 import org.apache.spark.sql.sources.StreamSourceProvider
 import org.apache.spark.sql.types.StructType
 import org.apache.spark.sql.util.CaseInsensitiveStringMap
-import org.apache.spark.sql.util.EmptyRelationImplicit._
 
 /**
  * Interface used to load a streaming `Dataset` from external storage systems (e.g. file systems,
@@ -51,6 +50,7 @@ import org.apache.spark.sql.util.EmptyRelationImplicit._
  */
 @Evolving
 final class DataStreamReader private[sql](sparkSession: SparkSession) extends api.DataStreamReader {
+  implicit val withRelations: Set[RelationWrapper] = Set.empty
   /** @inheritdoc */
   def format(source: String): this.type = {
     this.source = source

@@ -26,6 +26,7 @@ import scala.collection.mutable.ListBuffer
 import org.apache.spark.internal.Logging
 import org.apache.spark.sql._
 import org.apache.spark.sql.catalyst.InternalRow
+import org.apache.spark.sql.catalyst.analysis.RelationWrapper
 import org.apache.spark.sql.catalyst.encoders.{encoderFor, ExpressionEncoder}
 import org.apache.spark.sql.catalyst.expressions.UnsafeRow
 import org.apache.spark.sql.catalyst.plans.logical.LogicalPlan
@@ -39,7 +40,6 @@ import org.apache.spark.sql.internal.SQLConf
 import org.apache.spark.sql.internal.connector.SimpleTableProvider
 import org.apache.spark.sql.types.StructType
 import org.apache.spark.sql.util.CaseInsensitiveStringMap
-import org.apache.spark.sql.util.EmptyRelationImplicit._
 
 object MemoryStream {
   protected val currentBlockId = new AtomicInteger(0)
@@ -57,6 +57,7 @@ object MemoryStream {
  */
 abstract class MemoryStreamBase[A : Encoder](sqlContext: SQLContext) extends SparkDataStream {
   val encoder = encoderFor[A]
+  implicit val withRelations: Set[RelationWrapper] = Set.empty
   protected val attributes = toAttributes(encoder.schema)
 
   protected lazy val toRow: ExpressionEncoder.Serializer[A] = encoder.createSerializer()

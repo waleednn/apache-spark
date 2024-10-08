@@ -34,7 +34,7 @@ import org.apache.spark.sql.catalyst.{InternalRow, QueryPlanningTracker}
 import org.apache.spark.sql.catalyst.analysis.{MultiInstanceRelation, RelationWrapper, UnsupportedOperationChecker}
 import org.apache.spark.sql.catalyst.expressions.codegen.ByteCodeStats
 import org.apache.spark.sql.catalyst.plans.QueryPlan
-import org.apache.spark.sql.catalyst.plans.logical.{AppendData, Command, CommandResult, CreateTableAsSelect, LogicalPlan, OverwriteByExpression, OverwritePartitionsDynamic, ReplaceTableAsSelect, ReturnAnswer, SkipDedupRuleMarker, Union}
+import org.apache.spark.sql.catalyst.plans.logical.{AppendData, Command, CommandResult, CreateTableAsSelect, LogicalPlan, OverwriteByExpression, OverwritePartitionsDynamic, ReplaceTableAsSelect, ReturnAnswer, SkipDedupRelRuleMarker, Union}
 import org.apache.spark.sql.catalyst.rules.{PlanChangeLogger, Rule}
 import org.apache.spark.sql.catalyst.util.StringUtils.PlanStringConcat
 import org.apache.spark.sql.catalyst.util.truncatedString
@@ -92,7 +92,7 @@ class QueryExecution(
       // We can't clone `logical` here, which will reset the `_analyzed` flag.
       val skipDedupRule = withRelations.nonEmpty
       val planToAnalyze = if (skipDedupRule && !logical.analyzed) {
-        SkipDedupRuleMarker(logical)
+        SkipDedupRelRuleMarker(logical)
       } else {
         logical
       }

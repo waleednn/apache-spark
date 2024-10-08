@@ -122,7 +122,7 @@ class RelationalGroupedDataset protected[sql](
   /** @inheritdoc */
   def as[K: Encoder, T: Encoder]: KeyValueGroupedDataset[K, T] = {
     val (qe, groupingAttributes) =
-      handleGroupingExpression(df.logicalPlan, df.sparkSession, groupingExprs, withRelations)
+      handleGroupingExpression(df.logicalPlan, df.sparkSession, groupingExprs)
 
     new KeyValueGroupedDataset(
       implicitly[Encoder[K]],
@@ -526,7 +526,7 @@ private[sql] object RelationalGroupedDataset {
   private[sql] def handleGroupingExpression(
       logicalPlan: LogicalPlan,
       sparkSession: SparkSession,
-      groupingExprs: Seq[Expression], withRelations: Set[RelationWrapper] = Set.empty):
+      groupingExprs: Seq[Expression])(implicit withRelations: Set[RelationWrapper] = Set.empty):
   (QueryExecution, Seq[Attribute]) = {
     // Resolves grouping expressions.
     val dummyPlan = Project(groupingExprs.map(alias), LocalRelation(logicalPlan.output))
@@ -538,7 +538,7 @@ private[sql] object RelationalGroupedDataset {
     // Adds the grouping expressions that are not in base DataFrame into outputs.
     val addedCols = aliasedGroupings.filter(g => !logicalPlan.outputSet.contains(g.toAttribute))
     val newPlan = Project(logicalPlan.output ++ addedCols, logicalPlan)
-    val qe = sparkSession.sessionState.executePlan(newPlan)(withRelations)
+    val qe = sparkSession.sessionState.executePlan(newPlan)
 
     (qe, aliasedGroupings.map(_.toAttribute))
   }

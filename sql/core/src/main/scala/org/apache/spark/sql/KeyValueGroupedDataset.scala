@@ -18,7 +18,7 @@
 package org.apache.spark.sql
 
 import org.apache.spark.api.java.function._
-import org.apache.spark.sql.catalyst.analysis.{EliminateEventTimeWatermark, UnresolvedAttribute}
+import org.apache.spark.sql.catalyst.analysis.{EliminateEventTimeWatermark, RelationWrapper, UnresolvedAttribute}
 import org.apache.spark.sql.catalyst.encoders.AgnosticEncoders.{agnosticEncoderFor, ProductEncoder}
 import org.apache.spark.sql.catalyst.encoders.encoderFor
 import org.apache.spark.sql.catalyst.expressions.Attribute
@@ -28,7 +28,7 @@ import org.apache.spark.sql.execution.QueryExecution
 import org.apache.spark.sql.expressions.ReduceAggregator
 import org.apache.spark.sql.internal.TypedAggUtils.{aggKeyColumn, withInputType}
 import org.apache.spark.sql.streaming.{GroupState, GroupStateTimeout, OutputMode, StatefulProcessor, StatefulProcessorWithInitialState, TimeMode}
-import org.apache.spark.sql.util.EmptyRelationImplicit._
+
 /**
  * A [[Dataset]] has been logically grouped by a user specified grouping key.  Users should not
  * construct a [[KeyValueGroupedDataset]] directly, but should instead call `groupByKey` on
@@ -45,6 +45,7 @@ class KeyValueGroupedDataset[K, V] private[sql](
   extends api.KeyValueGroupedDataset[K, V] {
   type KVDS[KY, VL] = KeyValueGroupedDataset[KY, VL]
 
+  private implicit lazy val withRelations: Set[RelationWrapper] = this.queryExecution.getRelations
   private implicit def kEncoderImpl: Encoder[K] = kEncoder
   private implicit def vEncoderImpl: Encoder[V] = vEncoder
 
