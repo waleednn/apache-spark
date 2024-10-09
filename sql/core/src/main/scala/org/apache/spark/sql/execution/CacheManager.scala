@@ -100,9 +100,8 @@ class CacheManager extends Logging with AdaptiveSparkPlanHelper {
       query.queryExecution.analyzed,
       query.queryExecution.normalized,
       tableName,
-      storageLevel,
-      query.queryExecution.getRelations
-    )
+      storageLevel)(query.queryExecution.getRelations)
+
   }
 
   /**
@@ -124,8 +123,8 @@ class CacheManager extends Logging with AdaptiveSparkPlanHelper {
       unnormalizedPlan: LogicalPlan,
       normalizedPlan: LogicalPlan,
       tableName: Option[String],
-      storageLevel: StorageLevel,
-      withRelations: Set[RelationWrapper] = Set.empty): Unit = {
+      storageLevel: StorageLevel)
+      (implicit withRelations: Set[RelationWrapper] = Set.empty): Unit = {
     if (storageLevel == StorageLevel.NONE) {
       // Do nothing for StorageLevel.NONE since it will not actually cache any data.
     } else if (lookupCachedDataInternal(normalizedPlan).nonEmpty) {
@@ -134,7 +133,7 @@ class CacheManager extends Logging with AdaptiveSparkPlanHelper {
       val sessionWithConfigsOff = getOrCloneSessionWithConfigsOff(spark)
       val inMemoryRelation = sessionWithConfigsOff.withActive {
         // it creates query execution from unnormalizedPlan plan to avoid multiple normalization.
-        val qe = sessionWithConfigsOff.sessionState.executePlan(unnormalizedPlan)(withRelations)
+        val qe = sessionWithConfigsOff.sessionState.executePlan(unnormalizedPlan)
         InMemoryRelation(
           storageLevel,
           qe,

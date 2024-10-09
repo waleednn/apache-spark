@@ -25,7 +25,7 @@ import org.apache.spark.Partition
 import org.apache.spark.annotation.Stable
 import org.apache.spark.api.java.JavaRDD
 import org.apache.spark.rdd.RDD
-import org.apache.spark.sql.catalyst.analysis.{RelationWrapper, UnresolvedRelation}
+import org.apache.spark.sql.catalyst.analysis.UnresolvedRelation
 import org.apache.spark.sql.catalyst.csv.{CSVHeaderChecker, CSVOptions, UnivocityParser}
 import org.apache.spark.sql.catalyst.expressions.ExprUtils
 import org.apache.spark.sql.catalyst.json.{CreateJacksonParser, JacksonParser, JSONOptions}
@@ -361,12 +361,11 @@ class DataFrameReader private[sql](sparkSession: SparkSession)
 
   /** @inheritdoc */
   def table(tableName: String): DataFrame = {
-    implicit val withRelations: Set[RelationWrapper] = Set.empty
     assertNoSpecifiedSchema("table")
     val multipartIdentifier =
       sparkSession.sessionState.sqlParser.parseMultipartIdentifier(tableName)
     Dataset.ofRows(sparkSession, UnresolvedRelation(multipartIdentifier,
-      new CaseInsensitiveStringMap(extraOptions.toMap.asJava)))
+      new CaseInsensitiveStringMap(extraOptions.toMap.asJava)))(Set.empty)
   }
 
   /** @inheritdoc */

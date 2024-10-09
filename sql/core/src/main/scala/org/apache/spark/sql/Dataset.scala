@@ -2220,7 +2220,7 @@ class Dataset[T] private[sql](
   /** A convenient function to wrap a logical plan and produce a DataFrame. */
   @inline private def withPlan(logicalPlan: LogicalPlan)
     (implicit  withRelations: Set[RelationWrapper]): DataFrame = {
-    Dataset.ofRows(sparkSession, logicalPlan)(withRelations)
+    Dataset.ofRows(sparkSession, logicalPlan)
   }
 
   /** A convenient function to wrap a logical plan and produce a Dataset. */
