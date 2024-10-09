@@ -685,6 +685,7 @@ class Dataset[T] private[sql](
   def joinWith[U](other: Dataset[U], condition: Column, joinType: String): Dataset[(T, U)] = {
     // Creates a Join node and resolve it first, to get join condition resolved, self-join resolved,
     // etc.
+
     val joinedQe = sparkSession.sessionState.executePlan(
       Join(
         this.logicalPlan,
@@ -1071,14 +1072,15 @@ class Dataset[T] private[sql](
 
   /** @inheritdoc */
   def unionByName(other: Dataset[T], allowMissingColumns: Boolean): Dataset[T] = {
+    val combinedRelations = this.queryExecution.getCombinedRelations(other.queryExecution)
     withSetOperator {
       // We need to resolve the by-name Union first, as the underlying Unions are already resolved
       // and we can only combine adjacent Unions if they are all resolved.
       val resolvedUnion = sparkSession.sessionState.executePlan(
         Union(logicalPlan :: other.logicalPlan :: Nil, byName = true, allowMissingColumns))(
-        this.queryExecution.getCombinedRelations(other.queryExecution))
+          combinedRelations)
       combineUnions(resolvedUnion.analyzed)
-    }(this.queryExecution.getCombinedRelations(other.queryExecution))
+    }(combinedRelations)
   }
 
   /** @inheritdoc */
@@ -2224,8 +2226,8 @@ class Dataset[T] private[sql](
   }
 
   /** A convenient function to wrap a logical plan and produce a Dataset. */
-  @inline private def withTypedPlan[U : Encoder](logicalPlan: LogicalPlan)(
-     implicit withRelations: Set[RelationWrapper]): Dataset[U] = {
+  @inline private def withTypedPlan[U : Encoder](logicalPlan: LogicalPlan): Dataset[U] = {
+    implicitly[Set[RelationWrapper]]
     Dataset(sparkSession, logicalPlan)
   }
 
