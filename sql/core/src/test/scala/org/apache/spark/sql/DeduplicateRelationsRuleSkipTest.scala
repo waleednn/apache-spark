@@ -44,7 +44,7 @@ class DeduplicateRelationsRuleSkipTest extends QueryTest with SharedSparkSession
       .queryExecution.analyzed)
   }
 
-  test("test dedup rule skip flag for joins where dedup relations rule is not needed") {
+  test("joins for which DeduplicateRelations rule is not needed") {
     // join - join using
     var df = Seq(1, 2, 3).map(i => (i, i.toString)).toDF("int", "str")
     var df2 = Seq(1, 2, 3).map(i => (i, (i + 1).toString)).toDF("int", "str")
@@ -80,13 +80,13 @@ class DeduplicateRelationsRuleSkipTest extends QueryTest with SharedSparkSession
 
   }
 
-  test("test dedup rule skip flag for joins where dedup relations rule is needed") {
+  test("joins for which DeduplicateRelations rule is needed") {
     withSQLConf(SQLConf.CROSS_JOINS_ENABLED.key -> "false") {
       val df = spark.range(2)
       withExpectedSkipFlag(false, df.join(df, df("id") <=> df("id")).queryExecution.analyzed)
     }
-    var df1 = testData.select(testData("key")).as("df1")
-    var df2 = testData.select(testData("key")).as("df2")
+    val df1 = testData.select(testData("key")).as("df1")
+    val df2 = testData.select(testData("key")).as("df2")
     withExpectedSkipFlag(false, df1.join(df2, $"df1.key" === $"df2.key").queryExecution.analyzed)
 
     var df = Seq(1, 2, 3).map(i => (i, i.toString)).toDF("int", "str")
@@ -122,8 +122,36 @@ class DeduplicateRelationsRuleSkipTest extends QueryTest with SharedSparkSession
     }
   }
 
-  private def withExpectedSkipFlag[T](flag: Boolean, func : => T): T = {
-    DedupFlagVerifierRule.expectedSkipFlag.set(Option(flag))
+  test("unions for which DeduplicateRelations rule is not needed") {
+    val df = Seq(1, 2, 3).map(i => (i, i.toString)).toDF("int", "str")
+    val df2 = Seq(1, 2, 3).map(i => (i, (i + 1).toString)).toDF("int", "str")
+    withExpectedSkipFlag(true, df.union(df2).queryExecution.analyzed)
+    withExpectedSkipFlag(true, df.unionAll(df2).queryExecution.analyzed)
+  }
+
+  test("unions for which DeduplicateRelations rule is needed") {
+    val df = Seq(1, 2, 3).map(i => (i, i.toString)).toDF("int", "str")
+    val df2 = df.select($"int".as("int1"), $"str".as("str1"))
+    withExpectedSkipFlag(false, df.union(df2).queryExecution.analyzed)
+    withExpectedSkipFlag(false, df.unionAll(df2).queryExecution.analyzed)
+  }
+
+  test("intersection for which DeduplicateRelations rule is not needed") {
+    val df = Seq(1, 2, 3).map(i => (i, i.toString)).toDF("int", "str")
+    val df2 = Seq(1, 2, 3).map(i => (i, (i + 1).toString)).toDF("int", "str")
+    withExpectedSkipFlag(true, df.intersect(df2).queryExecution.analyzed)
+    withExpectedSkipFlag(true, df.intersectAll(df2).queryExecution.analyzed)
+  }
+
+  test("intersection for which DeduplicateRelations rule is needed") {
+    val df = Seq(1, 2, 3).map(i => (i, i.toString)).toDF("int", "str")
+    val df2 = df.select($"int".as("int1"), $"str".as("str1"))
+    withExpectedSkipFlag(false, df.intersect(df2).queryExecution.analyzed)
+    withExpectedSkipFlag(false, df.intersectAll(df2).queryExecution.analyzed)
+  }
+
+  private def withExpectedSkipFlag[T](skipDedupRuleflag: Boolean, func : => T): T = {
+    DedupFlagVerifierRule.expectedSkipFlag.set(Option(skipDedupRuleflag))
     try {
       func
     } finally {
