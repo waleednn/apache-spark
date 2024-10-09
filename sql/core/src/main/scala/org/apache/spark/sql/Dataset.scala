@@ -604,11 +604,11 @@ class Dataset[T] private[sql](
   /** @inheritdoc */
   def join(right: Dataset[_]): DataFrame = withPlan {
     Join(logicalPlan, right.logicalPlan, joinType = Inner, None, JoinHint.NONE)
-  }(getCombinedRelations(right.queryExecution))
+  }(this.queryExecution.getCombinedRelations(right.queryExecution))
 
   /** @inheritdoc */
   def join(right: Dataset[_], usingColumns: Seq[String], joinType: String): DataFrame = {
-    val combinedRelations = this.getCombinedRelations(right.queryExecution)
+    val combinedRelations = this.queryExecution.getCombinedRelations(right.queryExecution)
     // Analyze the self join. The assumption is that the analyzer will disambiguate left vs right
     // by creating a new instance for one of the branch.
     val qe = sparkSession.sessionState.executePlan(
@@ -646,7 +646,7 @@ class Dataset[T] private[sql](
     val plan = withPlan(
       Join(logicalPlan, right.logicalPlan,
         JoinType(joinType), joinExprs.map(_.expr), JoinHint.NONE))(
-          this.getCombinedRelations(right.queryExecution))
+      this.queryExecution.getCombinedRelations(right.queryExecution))
       .queryExecution.analyzed.asInstanceOf[Join]
 
     // If auto self join alias is disabled, return the plan.
@@ -673,13 +673,13 @@ class Dataset[T] private[sql](
     // TODO: asif The joinExprs can contain subqueries ?
     withPlan {
       resolveSelfJoinCondition(right, Some(joinExprs), joinType)
-    }(this.getCombinedRelations(right.queryExecution))
+    }(this.queryExecution.getCombinedRelations(right.queryExecution))
   }
 
   /** @inheritdoc */
   def crossJoin(right: Dataset[_]): DataFrame = withPlan {
     Join(logicalPlan, right.logicalPlan, joinType = Cross, None, JoinHint.NONE)
-  }(this.getCombinedRelations(right.queryExecution))
+  }(this.queryExecution.getCombinedRelations(right.queryExecution))
 
   /** @inheritdoc */
   def joinWith[U](other: Dataset[U], condition: Column, joinType: String): Dataset[(T, U)] = {
@@ -691,7 +691,7 @@ class Dataset[T] private[sql](
         other.logicalPlan,
         JoinType(joinType),
         Some(condition.expr),
-        JoinHint.NONE))(this.getCombinedRelations(other.queryExecution))
+        JoinHint.NONE))(this.queryExecution.getCombinedRelations(other.queryExecution))
     val joined = joinedQe.analyzed.asInstanceOf[Join]
 
     val leftEncoder = agnosticEncoderFor(encoder)
@@ -756,7 +756,7 @@ class Dataset[T] private[sql](
         allowExactMatches,
         AsOfJoinDirection(direction)
       )
-    }(this.getCombinedRelations(other.queryExecution))
+    }(this.queryExecution.getCombinedRelations(other.queryExecution))
   }
 
   /** @inheritdoc */
@@ -1067,7 +1067,7 @@ class Dataset[T] private[sql](
   /** @inheritdoc */
   def union(other: Dataset[T]): Dataset[T] = withSetOperator {
     combineUnions(Union(logicalPlan, other.logicalPlan))
-  }(this.getCombinedRelations(other.queryExecution))
+  }(this.queryExecution.getCombinedRelations(other.queryExecution))
 
   /** @inheritdoc */
   def unionByName(other: Dataset[T], allowMissingColumns: Boolean): Dataset[T] = {
@@ -1076,30 +1076,30 @@ class Dataset[T] private[sql](
       // and we can only combine adjacent Unions if they are all resolved.
       val resolvedUnion = sparkSession.sessionState.executePlan(
         Union(logicalPlan :: other.logicalPlan :: Nil, byName = true, allowMissingColumns))(
-        this.getCombinedRelations(other.queryExecution))
+        this.queryExecution.getCombinedRelations(other.queryExecution))
       combineUnions(resolvedUnion.analyzed)
-    }(this.getCombinedRelations(other.queryExecution))
+    }(this.queryExecution.getCombinedRelations(other.queryExecution))
   }
 
   /** @inheritdoc */
   def intersect(other: Dataset[T]): Dataset[T] = withSetOperator {
     Intersect(logicalPlan, other.logicalPlan, isAll = false)
-  }(this.getCombinedRelations(other.queryExecution))
+  }(this.queryExecution.getCombinedRelations(other.queryExecution))
 
   /** @inheritdoc */
   def intersectAll(other: Dataset[T]): Dataset[T] = withSetOperator {
     Intersect(logicalPlan, other.logicalPlan, isAll = true)
-  }(this.getCombinedRelations(other.queryExecution))
+  }(this.queryExecution.getCombinedRelations(other.queryExecution))
 
   /** @inheritdoc */
   def except(other: Dataset[T]): Dataset[T] = withSetOperator {
     Except(logicalPlan, other.logicalPlan, isAll = false)
-  }(this.getCombinedRelations(other.queryExecution))
+  }(this.queryExecution.getCombinedRelations(other.queryExecution))
 
   /** @inheritdoc */
   def exceptAll(other: Dataset[T]): Dataset[T] = withSetOperator {
     Except(logicalPlan, other.logicalPlan, isAll = true)
-  }(this.getCombinedRelations(other.queryExecution))
+  }(this.queryExecution.getCombinedRelations(other.queryExecution))
 
   /** @inheritdoc */
   def sample(withReplacement: Boolean, fraction: Double, seed: Long): Dataset[T] = {
@@ -2271,15 +2271,6 @@ class Dataset[T] private[sql](
   // This is only used in tests, for now.
   private[sql] def toArrowBatchRdd: RDD[Array[Byte]] = {
     toArrowBatchRdd(queryExecution.executedPlan)
-  }
-
-  private def getCombinedRelations(thatQe: QueryExecution): Set[RelationWrapper] = {
-    val thatRelations = thatQe.getRelations
-    if (this.queryExecution.getRelations.exists(thatRelations.contains)) {
-      Set.empty
-    } else {
-      this.queryExecution.getRelations ++ thatRelations
-    }
   }
 
   private def checkForSubquery(exprs: Seq[Expression]): Set[RelationWrapper] =

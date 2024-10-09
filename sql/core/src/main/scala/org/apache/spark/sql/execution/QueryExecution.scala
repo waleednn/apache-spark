@@ -126,6 +126,15 @@ class QueryExecution(
 
   def getRelations: Set[RelationWrapper] = identifiedRelations
 
+  def getCombinedRelations(thatQe: QueryExecution): Set[RelationWrapper] = {
+    val thatRelations = thatQe.getRelations
+    if (this.getRelations.exists(thatRelations.contains)) {
+      Set.empty
+    } else {
+      this.getRelations ++ thatRelations
+    }
+  }
+
   private val lazyCommandExecuted = LazyTry {
     mode match {
       case CommandExecutionMode.NON_ROOT => analyzed.mapChildren(eagerlyExecuteCommands)

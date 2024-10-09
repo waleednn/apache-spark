@@ -324,6 +324,7 @@ class KeyValueGroupedDataset[K, V] private[sql](
       otherSortExprs: Column*)(
       f: (K, Iterator[V], Iterator[U]) => IterableOnce[R]): Dataset[R] = {
     implicit val uEncoder = other.vEncoderImpl
+    implicit val wr = this.queryExecution.getCombinedRelations(other.queryExecution)
     Dataset[R](
       sparkSession,
       CoGroup(
@@ -335,7 +336,7 @@ class KeyValueGroupedDataset[K, V] private[sql](
         MapGroups.sortOrder(thisSortExprs.map(_.expr)),
         MapGroups.sortOrder(otherSortExprs.map(_.expr)),
         this.logicalPlan,
-        other.logicalPlan))
+        other.logicalPlan))(implicitly[Encoder[R]], wr)
   }
 
   override def toString: String = {
