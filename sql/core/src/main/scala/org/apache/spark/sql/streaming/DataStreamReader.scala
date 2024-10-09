@@ -23,7 +23,7 @@ import scala.jdk.CollectionConverters._
 
 import org.apache.spark.annotation.Evolving
 import org.apache.spark.sql.{api, DataFrame, Dataset, SparkSession}
-import org.apache.spark.sql.catalyst.analysis.{RelationWrapper, UnresolvedRelation}
+import org.apache.spark.sql.catalyst.analysis.UnresolvedRelation
 import org.apache.spark.sql.catalyst.streaming.StreamingRelationV2
 import org.apache.spark.sql.catalyst.types.DataTypeUtils.toAttributes
 import org.apache.spark.sql.catalyst.util.{CaseInsensitiveMap, CharVarcharUtils}
