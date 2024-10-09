@@ -2282,20 +2282,10 @@ class Dataset[T] private[sql](
     }
   }
 
-  private def checkForSubquery(exprs: Seq[Expression]): Set[RelationWrapper] = {
-    if (exprs.exists(_.containsAnyPattern(
-      TreePattern.IN_SUBQUERY,
-      TreePattern.DYNAMIC_PRUNING_SUBQUERY,
-      TreePattern.EXISTS_SUBQUERY,
-      TreePattern.FUNCTION_TABLE_RELATION_ARGUMENT_EXPRESSION,
-      TreePattern.LATERAL_SUBQUERY,
-      TreePattern.LIST_SUBQUERY,
-      TreePattern.SCALAR_SUBQUERY
-       ))) {
+  private def checkForSubquery(exprs: Seq[Expression]): Set[RelationWrapper] =
+    if (exprs.exists(_.containsAnyPattern(QueryExecution.subquery_patterns: _*))) {
       Set.empty
     } else {
       this.queryExecution.getRelations
     }
-  }
-
 }

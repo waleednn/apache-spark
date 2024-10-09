@@ -32,12 +32,15 @@ import org.apache.spark.rdd.RDD
 import org.apache.spark.sql.{AnalysisException, ExtendedExplainGenerator, Row, SparkSession}
 import org.apache.spark.sql.catalyst.{InternalRow, QueryPlanningTracker}
 import org.apache.spark.sql.catalyst.analysis.{MultiInstanceRelation, RelationWrapper, UnsupportedOperationChecker}
+import org.apache.spark.sql.catalyst.expressions.SubqueryExpression
 import org.apache.spark.sql.catalyst.expressions.codegen.ByteCodeStats
 import org.apache.spark.sql.catalyst.plans.QueryPlan
 import org.apache.spark.sql.catalyst.plans.logical.{AppendData, Command, CommandResult, CreateTableAsSelect, LogicalPlan, OverwriteByExpression, OverwritePartitionsDynamic, ReplaceTableAsSelect, ReturnAnswer, SkipDedupRelRuleMarker, Union}
 import org.apache.spark.sql.catalyst.rules.{PlanChangeLogger, Rule}
+import org.apache.spark.sql.catalyst.trees.TreePattern
 import org.apache.spark.sql.catalyst.util.StringUtils.PlanStringConcat
 import org.apache.spark.sql.catalyst.util.truncatedString
+import org.apache.spark.sql.execution.QueryExecution.subquery_patterns
 import org.apache.spark.sql.execution.adaptive.{AdaptiveExecutionContext, InsertAdaptiveSparkPlan}
 import org.apache.spark.sql.execution.bucketing.{CoalesceBucketsInJoin, DisableUnnecessaryBucketedScan}
 import org.apache.spark.sql.execution.dynamicpruning.PlanDynamicPruningFilters
@@ -104,17 +107,22 @@ class QueryExecution(
 
   def analyzed: LogicalPlan = lazyAnalyzed.get
 
-  private lazy val identifiedRelations: Set[RelationWrapper] =
+  private lazy val identifiedRelations: Set[RelationWrapper] = {
+    def collectRelations(plan: LogicalPlan): Set[RelationWrapper] = plan.collect {
+      case m: MultiInstanceRelation => Set(RelationWrapper(m.getClass, m.output.map(_.exprId.id)))
+
+      case pln => pln.expressions.filter(_.containsAnyPattern(subquery_patterns: _*))
+        .flatMap(_.collect {
+            case sq: SubqueryExpression => collectRelations(sq.plan)
+          }.flatten).toSet
+    }.flatten.toSet
+
     if (this.withRelations.isEmpty) {
-      this.analyzed.collect {
-        case m: MultiInstanceRelation => RelationWrapper(m.getClass, m.output.map(_.exprId.id))
-      }.toSet
+      collectRelations(this.analyzed)
     } else {
-      // TODO: Asif : should we always get from the analyzed plan or reuse ?
-      // as of now it seems fine to reuse, as InMemoryRelation substitution happens after
-      // analysis
       this.withRelations
     }
+  }
 
   def getRelations: Set[RelationWrapper] = identifiedRelations
 
@@ -674,5 +682,16 @@ object QueryExecution {
       planChangeLogger.logBatch("Plan Normalization", plan, normalized)
       normalized
     }
+
+
   }
+
+  val subquery_patterns =
+    Array(
+      TreePattern.IN_SUBQUERY, TreePattern.DYNAMIC_PRUNING_SUBQUERY,
+      TreePattern.EXISTS_SUBQUERY,
+      TreePattern.FUNCTION_TABLE_RELATION_ARGUMENT_EXPRESSION,
+      TreePattern.LATERAL_SUBQUERY,
+      TreePattern.LIST_SUBQUERY,
+      TreePattern.SCALAR_SUBQUERY).toIndexedSeq
 }
