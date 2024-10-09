@@ -123,24 +123,21 @@ final class DataStreamReader private[sql](sparkSession: SparkSession) extends ap
         table match {
           case _: SupportsRead if table.supportsAny(MICRO_BATCH_READ, CONTINUOUS_READ) =>
             import org.apache.spark.sql.connector.catalog.CatalogV2Implicits._
-            implicit val withRelations: Set[RelationWrapper] = Set.empty
             Dataset.ofRows(
               sparkSession,
               StreamingRelationV2(
                 Some(provider), source, table, dsOptions,
-                toAttributes(table.columns.asSchema), None, None, v1Relation))
+                toAttributes(table.columns.asSchema), None, None, v1Relation))(Set.empty)
 
           // fallback to v1
           // TODO (SPARK-27483): we should move this fallback logic to an analyzer rule.
           case _ =>
-            implicit val withRelations: Set[RelationWrapper] = Set.empty
-            Dataset.ofRows(sparkSession, StreamingRelation(v1DataSource))
+            Dataset.ofRows(sparkSession, StreamingRelation(v1DataSource))(Set.empty)
         }
 
       case _ =>
         // Code path for data source v1.
-        implicit val withRelations: Set[RelationWrapper] = Set.empty
-        Dataset.ofRows(sparkSession, StreamingRelation(v1DataSource))
+        Dataset.ofRows(sparkSession, StreamingRelation(v1DataSource))(Set.empty)
     }
   }
 
@@ -157,13 +154,12 @@ final class DataStreamReader private[sql](sparkSession: SparkSession) extends ap
   def table(tableName: String): DataFrame = {
     require(tableName != null, "The table name can't be null")
     val identifier = sparkSession.sessionState.sqlParser.parseMultipartIdentifier(tableName)
-    implicit val withRelations: Set[RelationWrapper] = Set.empty
     Dataset.ofRows(
       sparkSession,
       UnresolvedRelation(
         identifier,
         new CaseInsensitiveStringMap(extraOptions.toMap.asJava),
-        isStreaming = true))
+        isStreaming = true))(Set.empty)
   }
 
   override protected def assertNoSpecifiedSchema(operation: String): Unit = {
