@@ -21,6 +21,7 @@ import org.apache.spark.SparkConf
 import org.apache.spark.sql.catalyst.analysis.AnalysisContext
 import org.apache.spark.sql.catalyst.plans.logical.LogicalPlan
 import org.apache.spark.sql.catalyst.rules.Rule
+import org.apache.spark.sql.functions.{count, sum}
 import org.apache.spark.sql.internal.{SessionState, SQLConf}
 import org.apache.spark.sql.test.{SharedSparkSession, TestSparkSession, TestSQLSessionStateBuilder}
 
@@ -69,6 +70,13 @@ class DeduplicateRelationsRuleSkipTest extends QueryTest with SharedSparkSession
     df2 = Seq((2, "2"), (4, "4")).toDF("int", "str")
     withExpectedSkipFlag(true, df1.crossJoin(df2).queryExecution.analyzed)
 
+    df1 = Seq((1, "1"), (2, "2")).toDF("key1", "value1")
+    df2 = df1.filter($"value1" === "2").select($"key1".as("key2"), $"value1".as("value2"))
+    val joinDf = withExpectedSkipFlag(false, df1.join(df2, $"key1" === $"key2").queryExecution.
+      analyzed)
+    // If this self joined df is joined with a new different df, then skip flag should be true
+    var df3 = Seq((1, "1"), (2, "2")).toDF("key3", "value3")
+    withExpectedSkipFlag(true, df3.join(joinDf, joinDf("key2") === df3("key3")))
 
   }
 
@@ -87,6 +95,31 @@ class DeduplicateRelationsRuleSkipTest extends QueryTest with SharedSparkSession
         withExpectedSkipFlag(true, df.as("x").queryExecution.analyzed).join(
           withExpectedSkipFlag(true, df.as("y").queryExecution.analyzed), $"x.str" === $"y.str").
             queryExecution.analyzed).groupBy("x.str").count().queryExecution.analyzed)
+
+    df = Seq((1, "1"), (2, "2")).toDF("key", "value")
+    withExpectedSkipFlag(false, df.join(
+      withExpectedSkipFlag(true, df.filter($"value" === "2").queryExecution.analyzed),
+      df("key") === df("key")).queryExecution.analyzed)
+
+    val left = withExpectedSkipFlag(true, df.groupBy("key").agg(count("*")))
+    val right = withExpectedSkipFlag(true, df.groupBy("key").agg(sum("key")))
+    withExpectedSkipFlag(false, left.join(right, left("key") === right("key"))
+      .queryExecution.analyzed)
+
+    val dfX = spark.range(3)
+    val dfY = dfX.filter($"id" > 0)
+
+    withSQLConf(
+      SQLConf.FAIL_AMBIGUOUS_SELF_JOIN_ENABLED.key -> "false",
+      SQLConf.CROSS_JOINS_ENABLED.key -> "true") {
+      withExpectedSkipFlag(false, dfX.join(dfY, dfX("id") > dfY("id")).queryExecution.analyzed)
+
+      // Alias the dataframe and use qualified column names can fix ambiguous self-join.
+      val aliasedDfX = dfX.alias("left")
+      val aliasedDfY = dfY.as("right")
+      withExpectedSkipFlag(false, aliasedDfX.join(aliasedDfY, $"left.id" > $"right.id")
+        .queryExecution.analyzed)
+    }
   }
 
   private def withExpectedSkipFlag[T](flag: Boolean, func : => T): T = {

@@ -878,10 +878,9 @@ class Dataset[T] private[sql](
 
   /** @inheritdoc */
   def filter(condition: Column): Dataset[T] = {
-    implicit val withRelations: Set[RelationWrapper] = checkForSubquery(Seq(condition.expr))
     withTypedPlan {
       Filter(condition.expr, logicalPlan)
-    }
+    }(implicitly[Encoder[T]], checkForSubquery(Seq(condition.expr)))
   }
 
   /** @inheritdoc */
@@ -2226,8 +2225,8 @@ class Dataset[T] private[sql](
   }
 
   /** A convenient function to wrap a logical plan and produce a Dataset. */
-  @inline private def withTypedPlan[U : Encoder](logicalPlan: LogicalPlan): Dataset[U] = {
-    implicitly[Set[RelationWrapper]]
+  @inline private def withTypedPlan[U : Encoder](logicalPlan: LogicalPlan)
+    (implicit  withRelations: Set[RelationWrapper]): Dataset[U] = {
     Dataset(sparkSession, logicalPlan)
   }
 
