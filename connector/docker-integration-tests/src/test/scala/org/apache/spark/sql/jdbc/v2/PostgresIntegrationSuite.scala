@@ -17,10 +17,11 @@
 
 package org.apache.spark.sql.jdbc.v2
 
-import java.sql.Connection
+import java.sql.{Connection, Timestamp}
 
 import org.apache.spark.SparkConf
 import org.apache.spark.sql.AnalysisException
+import org.apache.spark.sql.Row
 import org.apache.spark.sql.catalyst.analysis.TableAlreadyExistsException
 import org.apache.spark.sql.execution.datasources.v2.jdbc.JDBCTableCatalog
 import org.apache.spark.sql.jdbc.DatabaseOnDocker
@@ -65,6 +66,13 @@ class PostgresIntegrationSuite extends DockerJDBCIntegrationV2Suite with V2JDBCT
          |)
                    """.stripMargin
     ).executeUpdate()
+    connection.prepareStatement(
+      s"CREATE TABLE datetime_table (id INTEGER, time TIMESTAMP)"
+    ).executeUpdate()
+    Iterator.range(1, 3).foreach(i => {
+      connection.prepareStatement(s"INSERT INTO datetime_table VALUES ($i, '2024-$i-$i $i:$i:$i')")
+        .executeUpdate()
+    })
   }
 
   override def testUpdateColumnType(tbl: String): Unit = {
@@ -122,5 +130,57 @@ class PostgresIntegrationSuite extends DockerJDBCIntegrationV2Suite with V2JDBCT
         parameters = Map("relationName" -> "`t2`")
       )
     }
+  }
+
+  test("SPARK-49162: Push down filter date_trunc function") {
+    def testFilterPushdown(format: String, date: String, expectedResult: Set[Row]): Unit = {
+      val df = sql(
+        s"""
+            SELECT *
+           | FROM $catalogName.datetime_table
+           | WHERE DATE_TRUNC('$format', time) = '$date'
+         """.stripMargin
+      )
+      checkFilterPushed(df)
+      assert(df.collect().toSet === expectedResult)
+    }
+
+    testFilterPushdown("century", "2001-01-01 00:00:00.0",
+      Set(
+        Row(1, Timestamp.valueOf("2024-01-01 01:01:01.0")),
+        Row(2, Timestamp.valueOf("2024-02-02 02:02:02.0"))
+      ))
+    testFilterPushdown("decade", "2020-01-01 00:00:00.0",
+      Set(
+        Row(1, Timestamp.valueOf("2024-01-01 01:01:01.0")),
+        Row(2, Timestamp.valueOf("2024-02-02 02:02:02.0"))
+      ))
+    testFilterPushdown("YEAR", "2024-01-01 00:00:00.0",
+      Set(
+        Row(1, Timestamp.valueOf("2024-01-01 01:01:01.0")),
+        Row(2, Timestamp.valueOf("2024-02-02 02:02:02.0"))
+      ))
+    testFilterPushdown("quarter", "2024-01-01 00:00:00.0",
+      Set(
+        Row(1, Timestamp.valueOf("2024-01-01 01:01:01.0")),
+        Row(2, Timestamp.valueOf("2024-02-02 02:02:02.0"))
+      ))
+    testFilterPushdown("MONTH", "2024-02-01 00:00:00.0",
+      Set(Row(2, Timestamp.valueOf("2024-02-02 02:02:02.0"))))
+    testFilterPushdown("weeK", "2024-01-01 00:00:00.0",
+      Set(Row(1, Timestamp.valueOf("2024-01-01 01:01:01.0"))))
+    testFilterPushdown("DaY", "2024-01-01 00:00:00.0",
+      Set(Row(1, Timestamp.valueOf("2024-01-01 01:01:01.0"))))
+    testFilterPushdown("Hour", "2024-02-02 02:00:00.0",
+      Set(Row(2, Timestamp.valueOf("2024-02-02 02:02:02.0"))))
+    testFilterPushdown("minutE", "2024-01-01 01:01:00.0",
+      Set(Row(1, Timestamp.valueOf("2024-01-01 01:01:01.0"))))
+    testFilterPushdown("second", "2024-02-02 02:02:03.0", Set())
+    testFilterPushdown("Millisecond", "2024-01-01 01:01:01.0",
+      Set(Row(1, Timestamp.valueOf("2024-01-01 01:01:01.0"))))
+    testFilterPushdown("MicroSecond", "2024-01-01 01:01:01.0",
+      Set(Row(1, Timestamp.valueOf("2024-01-01 01:01:01.0"))))
+    testFilterPushdown("MicroSecondS", "2024-02-02 02:02:02.0",
+      Set(Row(2, Timestamp.valueOf("2024-02-02 02:02:02.0"))))
   }
 }
