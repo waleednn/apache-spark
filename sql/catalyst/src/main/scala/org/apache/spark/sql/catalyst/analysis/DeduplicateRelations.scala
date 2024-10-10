@@ -17,7 +17,7 @@
 
 package org.apache.spark.sql.catalyst.analysis
 
-import scala.collection.{mutable, Seq}
+import scala.collection.mutable
 
 import org.apache.spark.sql.catalyst.expressions.{Alias, Attribute, AttributeMap, AttributeReference, AttributeSet, Expression, NamedExpression, OuterReference, SubqueryExpression}
 import org.apache.spark.sql.catalyst.plans.logical._
@@ -492,4 +492,3 @@ object DeduplicateRelations extends Rule[LogicalPlan] {
 }
 
 case class RelationWrapper(cls: Class[_], outputAttrIds: Seq[Long])
-
