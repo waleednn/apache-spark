@@ -40,7 +40,7 @@ import org.apache.spark.sql.SparkSession.applyAndLoadExtensions
 import org.apache.spark.sql.artifact.ArtifactManager
 import org.apache.spark.sql.catalog.Catalog
 import org.apache.spark.sql.catalyst._
-import org.apache.spark.sql.catalyst.analysis.{DummyRelationWrappper, NameParameterizedQuery, PosParameterizedQuery, RelationWrapper, UnresolvedRelation}
+import org.apache.spark.sql.catalyst.analysis.{NameParameterizedQuery, PosParameterizedQuery, RelationWrapper, UnresolvedRelation}
 import org.apache.spark.sql.catalyst.encoders._
 import org.apache.spark.sql.catalyst.expressions.{AttributeReference, Expression, NamedExpression}
 import org.apache.spark.sql.catalyst.parser.ParserInterface
@@ -570,7 +570,7 @@ class SparkSession private(
           parsedPlan
         }
       }
-      Dataset.ofRows(self, plan, tracker)(Set(DummyRelationWrappper))
+      Dataset.ofRows(self, plan, tracker)
     }
 
   /** @inheritdoc */

@@ -35,8 +35,6 @@ import org.apache.spark.sql.catalyst.trees.TreePattern._
  */
 case class RelationWrapper(cls: Class[_], outputAttrIds: Seq[Long])
 
-object DummyRelationWrappper extends RelationWrapper(classOf[Any], Seq.empty)
-
 object DeduplicateRelations extends Rule[LogicalPlan] {
   override def apply(plan: LogicalPlan): LogicalPlan = plan match {
     case SkipDedupRelRuleMarker(child) => AnalysisContext.setDedupRelatiionSkipFlag(true)

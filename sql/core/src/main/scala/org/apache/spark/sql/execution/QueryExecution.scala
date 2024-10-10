@@ -31,7 +31,7 @@ import org.apache.spark.internal.LogKeys.EXTENDED_EXPLAIN_GENERATOR
 import org.apache.spark.rdd.RDD
 import org.apache.spark.sql.{AnalysisException, ExtendedExplainGenerator, Row, SparkSession}
 import org.apache.spark.sql.catalyst.{InternalRow, QueryPlanningTracker}
-import org.apache.spark.sql.catalyst.analysis.{DummyRelationWrappper, MultiInstanceRelation, RelationWrapper, UnsupportedOperationChecker}
+import org.apache.spark.sql.catalyst.analysis.{MultiInstanceRelation, RelationWrapper, UnsupportedOperationChecker}
 import org.apache.spark.sql.catalyst.expressions.SubqueryExpression
 import org.apache.spark.sql.catalyst.expressions.codegen.ByteCodeStats
 import org.apache.spark.sql.catalyst.plans.QueryPlan
@@ -117,10 +117,10 @@ class QueryExecution(
           }.flatten).toSet
     }.flatten.toSet
 
-    this.withRelations.toSeq match {
-      case DummyRelationWrappper :: Nil | Nil => collectRelations(this.analyzed)
-
-      case _ => this.withRelations
+    if (this.withRelations.isEmpty) {
+      collectRelations(this.analyzed)
+    } else {
+      this.withRelations
     }
   }
 
