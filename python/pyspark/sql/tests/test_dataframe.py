@@ -506,14 +506,16 @@ class DataFrameTestsMixin:
 
         # number of fields must match.
         self.assertRaisesRegex(
-            Exception, "FIELD_STRUCT_LENGTH_MISMATCH", lambda: rdd.toDF("key: int").collect()
+            Exception,
+            "FIELD_STRUCT_LENGTH_MISMATCH",
+            lambda: rdd.coalesce(1).toDF("key: int").collect(),
         )
 
         # field types mismatch will cause exception at runtime.
         self.assertRaisesRegex(
             Exception,
             "FIELD_DATA_TYPE_UNACCEPTABLE",
-            lambda: rdd.toDF("key: float, value: string").collect(),
+            lambda: rdd.coalesce(1).toDF("key: float, value: string").collect(),
         )
 
         # flat schema values will be wrapped into row.
@@ -950,10 +952,16 @@ class DataFrameTestsMixin:
     def test_isinstance_dataframe(self):
         self.assertIsInstance(self.spark.range(1), DataFrame)
 
-    def test_checkpoint_dataframe(self):
+    def test_local_checkpoint_dataframe(self):
         with io.StringIO() as buf, redirect_stdout(buf):
             self.spark.range(1).localCheckpoint().explain()
             self.assertIn("ExistingRDD", buf.getvalue())
+
+    def test_local_checkpoint_dataframe_with_storage_level(self):
+        # We don't have a way to reach into the server and assert the storage level server side, but
+        # this test should cover for unexpected errors in the API.
+        df = self.spark.range(10).localCheckpoint(eager=True, storageLevel=StorageLevel.DISK_ONLY)
+        df.collect()
 
     def test_transpose(self):
         df = self.spark.createDataFrame([{"a": "x", "b": "y", "c": "z"}])
