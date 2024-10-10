@@ -134,6 +134,12 @@ class DeduplicateRelationsRuleSkipTest extends QueryTest with SharedSparkSession
     val df2 = df.select($"int".as("int1"), $"str".as("str1"))
     withExpectedSkipFlag(false, df.union(df2).queryExecution.analyzed)
     withExpectedSkipFlag(false, df.unionAll(df2).queryExecution.analyzed)
+    val df3 = Seq(1, 2, 3).map(i => (i, i.toString)).toDF("int3", "str3")
+    val u = df.union(df2)
+    // since u & df3 have no common, the rule should be skipped on further unions
+    withExpectedSkipFlag(true, df3.unionAll(u).queryExecution.analyzed)
+    // but u & df2 should require skip flag
+    withExpectedSkipFlag(false, u.unionAll(df2).queryExecution.analyzed)
   }
 
   test("intersection for which DeduplicateRelations rule is not needed") {
@@ -148,6 +154,12 @@ class DeduplicateRelationsRuleSkipTest extends QueryTest with SharedSparkSession
     val df2 = df.select($"int".as("int1"), $"str".as("str1"))
     withExpectedSkipFlag(false, df.intersect(df2).queryExecution.analyzed)
     withExpectedSkipFlag(false, df.intersectAll(df2).queryExecution.analyzed)
+    val df3 = Seq(1, 2, 3).map(i => (i, i.toString)).toDF("int3", "str3")
+    val u = df.intersectAll(df2)
+    // since u & df3 have no common, the rule should be skipped on further intersections
+    withExpectedSkipFlag(true, df3.intersectAll(u).queryExecution.analyzed)
+    // but u & df2 should require skip flag
+    withExpectedSkipFlag(false, u.intersectAll(df2).queryExecution.analyzed)
   }
 
   test("filter for which DeduplicateRelations rule is not needed") {
@@ -160,6 +172,13 @@ class DeduplicateRelationsRuleSkipTest extends QueryTest with SharedSparkSession
       val df = Seq(1, 2, 3).map(i => (i, i.toString)).toDF("int", "str")
       Seq(1, 2, 3).map(i => (i, i.toString)).toDF("int1", "str1").createOrReplaceTempView("v1")
       withExpectedSkipFlag(false, df.filter("int In (select int1 from v1)").queryExecution.analyzed)
+
+      val df3 = Seq(1, 2, 3).map(i => (i, i.toString)).toDF("int3", "str3")
+      val u = df.filter("int In (select int1 from v1)")
+      // since u & df3 have no common, the rule should be skipped on further usage
+      withExpectedSkipFlag(true, df3.intersectAll(u).queryExecution.analyzed)
+      // but u & df should require skip flag
+      withExpectedSkipFlag(false, u.intersectAll(df).queryExecution.analyzed)
     }
   }
 
@@ -174,6 +193,13 @@ class DeduplicateRelationsRuleSkipTest extends QueryTest with SharedSparkSession
       Seq(1, 2, 3).map(i => (i, i.toString)).toDF("int1", "str1").createOrReplaceTempView("v1")
       withExpectedSkipFlag(false, df.selectExpr("int", "(select max(int1) from v1) as maxii").
         queryExecution.analyzed)
+
+      val df3 = Seq(1, 2, 3).map(i => (i, i.toString)).toDF("int3", "str3")
+      val u = df.selectExpr("int", "(select max(int1) from v1) as maxii")
+      // since u & df3 have no common, the rule should be skipped on further usage
+      withExpectedSkipFlag(true, df3.intersectAll(u).queryExecution.analyzed)
+      // but u & df should require skip flag
+      withExpectedSkipFlag(false, u.intersectAll(df).queryExecution.analyzed)
     }
   }
 
