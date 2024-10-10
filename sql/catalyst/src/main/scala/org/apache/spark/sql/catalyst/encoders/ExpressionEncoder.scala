@@ -23,12 +23,12 @@ import scala.reflect.runtime.universe.TypeTag
 import org.apache.spark.SparkRuntimeException
 import org.apache.spark.sql.{Encoder, Row}
 import org.apache.spark.sql.catalyst.{DeserializerBuildHelper, InternalRow, JavaTypeInference, ScalaReflection, SerializerBuildHelper}
-import org.apache.spark.sql.catalyst.analysis.{Analyzer, GetColumnByOrdinal, SimpleAnalyzer, UnresolvedAttribute, UnresolvedExtractValue}
+import org.apache.spark.sql.catalyst.analysis.{Analyzer, GetColumnByOrdinal, RelationWrapper, SimpleAnalyzer, UnresolvedAttribute, UnresolvedExtractValue}
 import org.apache.spark.sql.catalyst.encoders.ExpressionEncoder.{Deserializer, Serializer}
 import org.apache.spark.sql.catalyst.expressions._
 import org.apache.spark.sql.catalyst.expressions.objects.{AssertNotNull, InitializeJavaBean, NewInstance}
 import org.apache.spark.sql.catalyst.optimizer.{ReassignLambdaVariableID, SimplifyCasts}
-import org.apache.spark.sql.catalyst.plans.logical.{CatalystSerde, DeserializeToObject, LeafNode, LocalRelation}
+import org.apache.spark.sql.catalyst.plans.logical.{CatalystSerde, DeserializeToObject, LeafNode, LocalRelation, SkipDedupRelRuleMarker}
 import org.apache.spark.sql.catalyst.types.DataTypeUtils
 import org.apache.spark.sql.errors.QueryExecutionErrors
 import org.apache.spark.sql.types.{ObjectType, StringType, StructField, StructType}
@@ -262,9 +262,16 @@ case class ExpressionEncoder[T](
    */
   def resolveAndBind(
       attrs: Seq[Attribute] = DataTypeUtils.toAttributes(schema),
-      analyzer: Analyzer = SimpleAnalyzer): ExpressionEncoder[T] = {
+      analyzer: Analyzer = SimpleAnalyzer,
+      withRelations: Set[RelationWrapper] = Set.empty): ExpressionEncoder[T] = {
     val dummyPlan = CatalystSerde.deserialize(LocalRelation(attrs))(this)
-    val analyzedPlan = analyzer.execute(dummyPlan)
+
+    val planToAnalyze = if (withRelations.nonEmpty && !dummyPlan.analyzed) {
+      SkipDedupRelRuleMarker(dummyPlan)
+    } else {
+      dummyPlan
+    }
+    val analyzedPlan = analyzer.execute(planToAnalyze)
     analyzer.checkAnalysis(analyzedPlan)
     val resolved = SimplifyCasts(analyzedPlan).asInstanceOf[DeserializeToObject].deserializer
     val bound = BindReferences.bindReference(resolved, attrs)

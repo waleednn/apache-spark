@@ -280,7 +280,8 @@ class Dataset[T] private[sql](
   // The resolved `ExpressionEncoder` which can be used to turn rows to objects of type T, after
   // collecting rows to the driver side.
   private lazy val resolvedEnc = {
-    exprEnc.resolveAndBind(logicalPlan.output, sparkSession.sessionState.analyzer)
+    exprEnc.resolveAndBind(logicalPlan.output, sparkSession.sessionState.analyzer,
+      this.queryExecution.getRelationsKnownUpfront)
   }
 
   private implicit def classTag: ClassTag[T] = encoder.clsTag

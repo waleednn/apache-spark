@@ -203,6 +203,19 @@ class DeduplicateRelationsRuleSkipTest extends QueryTest with SharedSparkSession
     }
   }
 
+  // This test can be enabled to measure perf  by skipping the rule when not necessary
+  test("perf difference by skipping dedup relations") {
+    var df = Seq(1, 2, 3).map(i => (i, i.toString)).toDF("int", "str")
+    val t1 = System.currentTimeMillis
+    for (i <- 0 until 3000) {
+      df = df.select(($"int" + 1).as("int"))
+    }
+    val t2 = System.currentTimeMillis
+    // scalastyle:off println
+    println("time taken = " + (t2 - t1))
+    // scalastyle:ofn println
+  }
+
   private def withExpectedSkipFlag[T](skipDedupRuleflag: Boolean, func : => T): T = {
     DedupFlagVerifierRule.expectedSkipFlag.set(Option(skipDedupRuleflag))
     try {
