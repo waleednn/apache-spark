@@ -150,6 +150,33 @@ class DeduplicateRelationsRuleSkipTest extends QueryTest with SharedSparkSession
     withExpectedSkipFlag(false, df.intersectAll(df2).queryExecution.analyzed)
   }
 
+  test("filter for which DeduplicateRelations rule is not needed") {
+    val df = Seq(1, 2, 3).map(i => (i, i.toString)).toDF("int", "str")
+    withExpectedSkipFlag(true, df.filter($"int" > 5 ).queryExecution.analyzed)
+  }
+
+  test("filter for which DeduplicateRelations rule is needed") {
+    withTempView("v1") {
+      val df = Seq(1, 2, 3).map(i => (i, i.toString)).toDF("int", "str")
+      Seq(1, 2, 3).map(i => (i, i.toString)).toDF("int1", "str1").createOrReplaceTempView("v1")
+      withExpectedSkipFlag(false, df.filter("int In (select int1 from v1)").queryExecution.analyzed)
+    }
+  }
+
+  test("projection for which DeduplicateRelations rule is not needed") {
+    val df = Seq(1, 2, 3).map(i => (i, i.toString)).toDF("int", "str")
+    withExpectedSkipFlag(true, df.select(($"int" + 5).as("in1")).queryExecution.analyzed)
+  }
+
+  test("projection for which DeduplicateRelations rule is needed") {
+    withTempView("v1") {
+      val df = Seq(1, 2, 3).map(i => (i, i.toString)).toDF("int", "str")
+      Seq(1, 2, 3).map(i => (i, i.toString)).toDF("int1", "str1").createOrReplaceTempView("v1")
+      withExpectedSkipFlag(false, df.selectExpr("int", "(select max(int1) from v1) as maxii").
+        queryExecution.analyzed)
+    }
+  }
+
   private def withExpectedSkipFlag[T](skipDedupRuleflag: Boolean, func : => T): T = {
     DedupFlagVerifierRule.expectedSkipFlag.set(Option(skipDedupRuleflag))
     try {
