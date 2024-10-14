@@ -54,17 +54,20 @@ class DeduplicateRelationsRuleSkipTest extends QueryTest with SharedSparkSession
     df2 = Seq(1, 2, 3).map(i => (i, i + 1, (i + 1).toString)).toDF("int", "int2", "str")
     withExpectedSkipFlag(true, df.join(df2, Seq("int", "int2")).queryExecution.analyzed)
     // join using multiple columns array
-    df = Seq(1, 2, 3).map(i => (i, i + 1, i.toString)).toDF("int", "int2", "str")
-    df2 = Seq(1, 2, 3).map(i => (i, i + 1, (i + 1).toString)).toDF("int", "int2", "str")
     withExpectedSkipFlag(true, df.join(df2, Array("int", "int2")).queryExecution.analyzed)
     // join with select
     df = Seq((1, 2, "1"), (3, 4, "3")).toDF("int", "int2", "str_sort").as("df1")
     df2 = Seq((1, 3, "1"), (5, 6, "5")).toDF("int", "int2", "str").as("df2")
     withExpectedSkipFlag(true,
-      withExpectedSkipFlag(true,
-        withExpectedSkipFlag(true, df.join(df2, $"df1.int" === $"df2.int", "outer").
-          queryExecution.analyzed).select($"df1.int", $"df2.int2").queryExecution.analyzed).
-          orderBy($"str_sort".asc, $"str".asc).queryExecution.analyzed)
+      withExpectedSkipFlag(true, {
+        val temp = withExpectedSkipFlag(true, {
+          val temp = df.join(df2, $"df1.int" === $"df2.int", "outer")
+          temp.queryExecution.analyzed
+          temp
+        }).select($"df1.int", $"df2.int2")
+        temp.queryExecution.analyzed
+        temp
+      }).orderBy($"str_sort".asc, $"str".asc).queryExecution.analyzed)
     // cross join
     var df1 = Seq((1, "1"), (3, "3")).toDF("int", "str")
     df2 = Seq((2, "2"), (4, "4")).toDF("int", "str")
@@ -76,7 +79,8 @@ class DeduplicateRelationsRuleSkipTest extends QueryTest with SharedSparkSession
       analyzed)
     // If this self joined df is joined with a new different df, then skip flag should be true
     var df3 = Seq((1, "1"), (2, "2")).toDF("key3", "value3")
-    withExpectedSkipFlag(true, df3.join(joinDf, joinDf("key2") === df3("key3")))
+    withExpectedSkipFlag(true, df3.join(joinDf, joinDf("key2") === df3("key3"))
+      .queryExecution.analyzed)
 
   }
 
@@ -91,18 +95,39 @@ class DeduplicateRelationsRuleSkipTest extends QueryTest with SharedSparkSession
 
     var df = Seq(1, 2, 3).map(i => (i, i.toString)).toDF("int", "str")
     withExpectedSkipFlag(true,
-      withExpectedSkipFlag(false,
-        withExpectedSkipFlag(true, df.as("x").queryExecution.analyzed).join(
-          withExpectedSkipFlag(true, df.as("y").queryExecution.analyzed), $"x.str" === $"y.str").
-            queryExecution.analyzed).groupBy("x.str").count().queryExecution.analyzed)
+      withExpectedSkipFlag(false, {
+        val temp = withExpectedSkipFlag(true, {
+            val temp = df.as("x")
+            temp.queryExecution.analyzed
+            temp
+          }).join(
+            withExpectedSkipFlag(true, {
+              val temp = df.as("y")
+              temp.queryExecution.analyzed
+              temp
+            }), $"x.str" === $"y.str")
+        temp.queryExecution.analyzed
+        temp
+      }).groupBy("x.str").count().queryExecution.analyzed)
 
     df = Seq((1, "1"), (2, "2")).toDF("key", "value")
     withExpectedSkipFlag(false, df.join(
-      withExpectedSkipFlag(true, df.filter($"value" === "2").queryExecution.analyzed),
-      df("key") === df("key")).queryExecution.analyzed)
+      withExpectedSkipFlag(true, {
+        val temp = df.filter($"value" === "2")
+        temp.queryExecution.analyzed
+        temp
+      }), df("key") === df("key")).queryExecution.analyzed)
 
-    val left = withExpectedSkipFlag(true, df.groupBy("key").agg(count("*")))
-    val right = withExpectedSkipFlag(true, df.groupBy("key").agg(sum("key")))
+    val left = withExpectedSkipFlag(true, {
+      val temp = df.groupBy("key").agg(count("*"))
+      temp.queryExecution.analyzed
+      temp
+    })
+    val right = withExpectedSkipFlag(true, {
+      val temp = df.groupBy("key").agg(sum("key"))
+      temp.queryExecution.analyzed
+      temp
+    })
     withExpectedSkipFlag(false, left.join(right, left("key") === right("key"))
       .queryExecution.analyzed)
 
@@ -203,8 +228,26 @@ class DeduplicateRelationsRuleSkipTest extends QueryTest with SharedSparkSession
     }
   }
 
+  test("SparkSession.sql(text) api uses DedupRule") {
+    withTempView("v1") {
+      val df = Seq(1, 2, 3).map(i => (i, i.toString)).toDF("int", "str")
+      Seq(1, 2, 3).map(i => (i, i.toString)).toDF("int1", "str1").createOrReplaceTempView("v1")
+      val df1 = withExpectedSkipFlag(false, {
+          val temp = spark.sql("select int1, str1 from v1")
+          temp.queryExecution.analyzed
+          temp
+      })
+      val u1 = withExpectedSkipFlag(true, {
+        val temp = df1.union(df)
+        temp.queryExecution.analyzed
+        temp
+      })
+      withExpectedSkipFlag(false, u1.intersectAll(df).queryExecution.analyzed)
+    }
+  }
+
   // This test can be enabled to measure perf  by skipping the rule when not necessary
-  test("perf difference by skipping dedup relations") {
+  ignore("perf difference by skipping dedup relations") {
     var df = Seq(1, 2, 3).map(i => (i, i.toString)).toDF("int", "str")
     val t1 = System.currentTimeMillis
     for (i <- 0 until 3000) {
