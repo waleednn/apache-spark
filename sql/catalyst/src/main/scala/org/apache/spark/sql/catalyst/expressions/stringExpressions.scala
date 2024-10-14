@@ -29,13 +29,14 @@ import org.apache.spark.network.util.JavaUtils
 import org.apache.spark.sql.catalyst.InternalRow
 import org.apache.spark.sql.catalyst.analysis.{ExpressionBuilder, FunctionRegistry, TypeCheckResult}
 import org.apache.spark.sql.catalyst.analysis.TypeCheckResult.DataTypeMismatch
+import org.apache.spark.sql.catalyst.collation.{CollationFactory, CollationSupport}
 import org.apache.spark.sql.catalyst.expressions.Cast._
 import org.apache.spark.sql.catalyst.expressions.codegen._
 import org.apache.spark.sql.catalyst.expressions.codegen.Block._
 import org.apache.spark.sql.catalyst.expressions.objects.{Invoke, StaticInvoke}
 import org.apache.spark.sql.catalyst.trees.{BinaryLike, UnaryLike}
 import org.apache.spark.sql.catalyst.trees.TreePattern.{TreePattern, UPPER_OR_LOWER}
-import org.apache.spark.sql.catalyst.util.{ArrayData, CharsetProvider, CollationFactory, CollationSupport, GenericArrayData, TypeUtils}
+import org.apache.spark.sql.catalyst.util.{ArrayData, CharsetProvider, GenericArrayData, TypeUtils}
 import org.apache.spark.sql.errors.{QueryCompilationErrors, QueryExecutionErrors}
 import org.apache.spark.sql.internal.SQLConf
 import org.apache.spark.sql.internal.types.{AbstractArrayType,
@@ -463,12 +464,12 @@ case class Upper(child: Expression)
   private final lazy val useICU = SQLConf.get.getConf(SQLConf.ICU_CASE_MAPPINGS_ENABLED)
 
   override def convert(v: UTF8String): UTF8String =
-    CollationSupport.Upper.exec(v, collationId, useICU)
+    CollationSupport.Upper.exec(v, useICU, collationId)
 
   final override val nodePatterns: Seq[TreePattern] = Seq(UPPER_OR_LOWER)
 
   override def doGenCode(ctx: CodegenContext, ev: ExprCode): ExprCode = {
-    defineCodeGen(ctx, ev, c => CollationSupport.Upper.genCode(c, collationId, useICU))
+    defineCodeGen(ctx, ev, c => CollationSupport.Upper.genCode(c, useICU.toString, collationId))
   }
 
   override protected def withNewChildInternal(newChild: Expression): Upper = copy(child = newChild)
@@ -495,12 +496,12 @@ case class Lower(child: Expression)
   private final lazy val useICU = SQLConf.get.getConf(SQLConf.ICU_CASE_MAPPINGS_ENABLED)
 
   override def convert(v: UTF8String): UTF8String =
-    CollationSupport.Lower.exec(v, collationId, useICU)
+    CollationSupport.Lower.exec(v, useICU, collationId)
 
   final override val nodePatterns: Seq[TreePattern] = Seq(UPPER_OR_LOWER)
 
   override def doGenCode(ctx: CodegenContext, ev: ExprCode): ExprCode = {
-    defineCodeGen(ctx, ev, c => CollationSupport.Lower.genCode(c, collationId, useICU))
+    defineCodeGen(ctx, ev, c => CollationSupport.Lower.genCode(c, useICU.toString, collationId))
   }
 
   override def prettyName: String =
@@ -2090,10 +2091,11 @@ case class InitCap(child: Expression)
   override def dataType: DataType = child.dataType
 
   override def nullSafeEval(string: Any): Any = {
-    CollationSupport.InitCap.exec(string.asInstanceOf[UTF8String], collationId, useICU)
+    CollationSupport.InitCap.exec(string.asInstanceOf[UTF8String], useICU, collationId)
   }
   override def doGenCode(ctx: CodegenContext, ev: ExprCode): ExprCode = {
-    defineCodeGen(ctx, ev, str => CollationSupport.InitCap.genCode(str, collationId, useICU))
+    defineCodeGen(ctx, ev, str =>
+      CollationSupport.InitCap.genCode(str, useICU.toString, collationId))
   }
 
   override protected def withNewChildInternal(newChild: Expression): InitCap =
