@@ -124,8 +124,6 @@ class QueryExecution(
     }
   }
 
-  def getRelationsKnownUpfront: Set[RelationWrapper] = withRelations
-
   def getRelations: Set[RelationWrapper] = identifiedRelations
 
   def getCombinedRelations(thatQe: QueryExecution): Set[RelationWrapper] = {
