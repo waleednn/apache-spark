@@ -2932,6 +2932,11 @@
         "message" : [
           "expects %1$, %2$ and so on, but got %0$."
         ]
+      },
+      "ZSTD_DECOMPRESS_INPUT" : {
+        "message" : [
+          "expects valid zstd-compressed data."
+        ]
       }
     },
     "sqlState" : "22023"
