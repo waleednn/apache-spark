@@ -214,7 +214,7 @@ object CollationTypeCoercion {
 
   private def castStringType(inType: DataType, castType: StringType): Option[DataType] = {
     @Nullable val ret: DataType = inType match {
-      case st: StringType if st.collationId != castType.collationId => castType
+      case st: StringType if !st.sameType(castType) => castType
       case ArrayType(arrType, nullable) =>
         castStringType(arrType, castType).map(ArrayType(_, nullable)).orNull
       case _ => null
@@ -264,17 +264,17 @@ object CollationTypeCoercion {
           }
           .map(_.dataType)
           .filter(hasStringType)
-          .map(extractStringType(_).collationId)
-          .distinct
+          .map(extractStringType)
 
-        if (implicitTypes.length > 1) {
-          throw QueryCompilationErrors.implicitCollationMismatchError(
-            implicitTypes.map(t => StringType(t))
-          )
+        if (implicitTypes.distinct.size > 1 && !allSameType(implicitTypes)) {
+          throw QueryCompilationErrors.implicitCollationMismatchError(implicitTypes.distinct)
         }
         else {
-          implicitTypes.headOption.map(StringType(_)).getOrElse(SQLConf.get.defaultStringType)
+          implicitTypes.headOption.getOrElse(SQLConf.get.defaultStringType)
         }
     }
   }
+
+  private def allSameType(types: Seq[StringType]): Boolean =
+    types.forall(_.semanticEquals(types.head))
 }

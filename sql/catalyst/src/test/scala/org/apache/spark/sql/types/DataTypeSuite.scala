@@ -692,6 +692,13 @@ class DataTypeSuite extends SparkFunSuite with SQLHelper {
     false,
     caseSensitive = true)
 
+
+  test("StringType is not the same as StringType(UTF8_BINARY)") {
+    assert(StringType == StringType(0))
+    assert(StringType != StringType("UTF8_BINARY"))
+    assert(StringType.sameType(StringType("UTF8_BINARY")))
+  }
+
   def checkEqualsIgnoreCompatibleCollation(
       from: DataType,
       to: DataType,
@@ -916,7 +923,7 @@ class DataTypeSuite extends SparkFunSuite with SQLHelper {
       withSQLConf(SQLConf.ALLOW_READING_UNKNOWN_COLLATIONS.key -> "true") {
         val dataType = DataType.fromJson(json)
         assert(dataType === StructType(
-          StructField("c1", StringType(CollationFactory.UTF8_BINARY_COLLATION_ID), false) :: Nil))
+          StructField("c1", StringType, false) :: Nil))
       }
     }
   }
@@ -958,7 +965,7 @@ class DataTypeSuite extends SparkFunSuite with SQLHelper {
     withSQLConf(SQLConf.ALLOW_READING_UNKNOWN_COLLATIONS.key -> "true") {
       val dataType = DataType.fromJson(json)
       assert(dataType === StructType(
-        StructField("c1", StringType(CollationFactory.UTF8_BINARY_COLLATION_ID), false) :: Nil))
+        StructField("c1", StringType("UTF8_BINARY"), false) :: Nil))
     }
   }
 
@@ -1110,7 +1117,6 @@ class DataTypeSuite extends SparkFunSuite with SQLHelper {
   }
 
   test("parse array type with invalid collation metadata") {
-    val utf8BinaryCollationId = CollationFactory.UTF8_BINARY_COLLATION_ID
     val arrayJson =
       s"""
          |{
@@ -1141,7 +1147,7 @@ class DataTypeSuite extends SparkFunSuite with SQLHelper {
     withSQLConf(SQLConf.ALLOW_READING_UNKNOWN_COLLATIONS.key -> "true") {
       val dataType = DataType.parseDataType(
         JsonMethods.parse(arrayJson), collationsMap = collationsMap)
-      assert(dataType === ArrayType(StringType(utf8BinaryCollationId)))
+      assert(dataType === ArrayType(StringType))
     }
   }
 
@@ -1169,7 +1175,6 @@ class DataTypeSuite extends SparkFunSuite with SQLHelper {
   }
 
   test("parse map type with invalid collation metadata") {
-    val utf8BinaryCollationId = CollationFactory.UTF8_BINARY_COLLATION_ID
     val mapJson =
       s"""
          |{
@@ -1201,8 +1206,7 @@ class DataTypeSuite extends SparkFunSuite with SQLHelper {
     withSQLConf(SQLConf.ALLOW_READING_UNKNOWN_COLLATIONS.key -> "true") {
       val dataType = DataType.parseDataType(
         JsonMethods.parse(mapJson), collationsMap = collationsMap)
-      assert(dataType === MapType(
-        StringType(utf8BinaryCollationId), StringType(utf8BinaryCollationId)))
+      assert(dataType === MapType(StringType, StringType))
     }
   }
 
