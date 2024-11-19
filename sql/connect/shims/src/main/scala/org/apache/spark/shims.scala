@@ -36,6 +36,7 @@ package sql {
 
   package execution {
     class QueryExecution
+    class SparkStrategy
   }
   package internal {
     class SharedState
