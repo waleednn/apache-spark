@@ -54,7 +54,7 @@ class StringType private (val collationId: Int) extends AtomicType with Serializ
     CollationFactory.fetchCollation(collationId).supportsSpaceTrimming
 
   private[sql] def isUTF8BinaryCollation: Boolean =
-    collationId == CollationFactory.UTF8_BINARY_COLLATION_ID
+    CollationFactory.isUTF8BinaryCollation(collationId)
 
   private[sql] def isUTF8LcaseCollation: Boolean =
     collationId == CollationFactory.UTF8_LCASE_COLLATION_ID
@@ -83,9 +83,18 @@ class StringType private (val collationId: Int) extends AtomicType with Serializ
   override def jsonValue: JValue = JString("string")
 
   override def equals(obj: Any): Boolean =
-    obj.isInstanceOf[StringType] && obj.asInstanceOf[StringType].collationId == collationId
+    obj.isInstanceOf[StringType] && (obj.asInstanceOf[StringType].collationId == collationId ||
+      (isUTF8BinaryCollation && obj.asInstanceOf[StringType].isUTF8BinaryCollation))
 
-  override def hashCode(): Int = collationId.hashCode()
+  override def hashCode(): Int = {
+    if (isUTF8BinaryCollation) {
+      // Since we have two different collation ids for UTF8_BINARY collation,
+      // we need to separate this case and return the same hashCode for both of them.
+      CollationFactory.UTF8_BINARY_COLLATION_ID.hashCode()
+    } else {
+      collationId.hashCode()
+    }
+  }
 
   /**
    * The default size of a value of the StringType is 20 bytes.
