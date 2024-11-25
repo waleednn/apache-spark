@@ -415,18 +415,6 @@ public final class CollationFactory {
         }
       }
 
-      /**
-       * Method for constructing errors thrown on providing invalid collation name.
-       */
-      protected static SparkException collationInvalidNameException(String collationName) {
-        Map<String, String> params = new HashMap<>();
-        final int maxSuggestions = 3;
-        params.put("collationName", collationName);
-        params.put("proposals", getClosestSuggestionsOnInvalidName(collationName, maxSuggestions));
-        return new SparkException("COLLATION_INVALID_NAME",
-          SparkException.constructMessageParams(params), null);
-      }
-
       private static int collationNameToId(String collationName) throws SparkException {
         // Collation names provided by user are treated as case-insensitive.
         String collationNameUpper = collationName.toUpperCase();
@@ -1183,6 +1171,32 @@ public final class CollationFactory {
    */
   public static int collationNameToId(String collationName) throws SparkException {
     return Collation.CollationSpec.collationNameToId(collationName);
+  }
+
+  /**
+   * Method for constructing errors thrown on providing invalid collation name.
+   */
+  public static SparkException collationInvalidNameException(String collationName) {
+    Map<String, String> params = new HashMap<>();
+    final int maxSuggestions = 3;
+    params.put("collationName", collationName);
+    params.put("proposals", getClosestSuggestionsOnInvalidName(collationName, maxSuggestions));
+    return new SparkException("COLLATION_INVALID_NAME",
+        SparkException.constructMessageParams(params), null);
+  }
+
+
+
+  /**
+   * Returns the fully qualified collation name for the given collation ID.
+   */
+  public static String fullyQualifiedName(int collationId) {
+    Collation.CollationSpec.DefinitionOrigin definitionOrigin =
+        Collation.CollationSpec.getDefinitionOrigin(collationId);
+    // Currently only predefined collations are supported.
+    assert definitionOrigin == Collation.CollationSpec.DefinitionOrigin.PREDEFINED;
+    return String.format("%s.%s.%s", CATALOG, SCHEMA,
+      Collation.CollationSpec.fetchCollation(collationId).collationName);
   }
 
   public static boolean isCaseInsensitive(int collationId) {
