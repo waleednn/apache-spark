@@ -24,7 +24,7 @@ import org.apache.spark.sql.catalyst.analysis.TypeCoercion.{hasStringType, haveS
 import org.apache.spark.sql.catalyst.expressions._
 import org.apache.spark.sql.catalyst.trees.TreeNodeTag
 import org.apache.spark.sql.errors.QueryCompilationErrors
-import org.apache.spark.sql.types.{ArrayType, DataType, MapType, StringType}
+import org.apache.spark.sql.types.{ArrayType, DataType, StringType}
 import org.apache.spark.sql.util.SchemaUtils
 
 /**
@@ -92,13 +92,6 @@ object CollationTypeCoercion {
       val Seq(str, len, pad) = stringPadExpr.children
       val Seq(newStr, newPad) = collateToSingleType(Seq(str, pad))
       stringPadExpr.withNewChildren(Seq(newStr, len, newPad))
-
-    case raiseError: RaiseError =>
-      val newErrorParams = raiseError.errorParms.dataType match {
-        case MapType(StringType, StringType, _) => raiseError.errorParms
-        case _ => Cast(raiseError.errorParms, MapType(StringType, StringType))
-      }
-      raiseError.withNewChildren(Seq(raiseError.errorClass, newErrorParams))
 
     case framelessOffsetWindow @ (_: Lag | _: Lead) =>
       val Seq(input, offset, default) = framelessOffsetWindow.children
@@ -185,9 +178,14 @@ object CollationTypeCoercion {
    * if expression has StringType in the first place.
    */
   def castStringType(expr: Expression, st: StringType): Expression = {
-    castStringType(expr.dataType, st)
-      .map(dt => Cast(expr, dt))
-      .getOrElse(expr)
+    castStringType(expr.dataType, st) match {
+      case Some(dt) => expr match {
+        case lit: Literal => lit.copy(dataType = dt)
+        case cast: Cast => cast.copy(dataType = dt)
+        case _ => Cast(expr, dt)
+      }
+      case _ => expr
+    }
   }
 
   private def castStringType(inType: DataType, castType: StringType): Option[DataType] = {
@@ -219,6 +217,11 @@ object CollationTypeCoercion {
    */
   private def findLeastCommonStringType(expressions: Seq[Expression]): Option[StringType] = {
     if (!expressions.exists(e => SchemaUtils.hasNonUTF8BinaryCollation(e.dataType))) {
+      // if there are no collations return None
+      return None
+    } else if (expressions.exists(e => SchemaUtils.hasDefaultStringType(e.dataType))) {
+      // if there are default string types, return None as they need to be resolved
+      // first in [[ResolveDefaultStringTypes]]
       return None
     }
 

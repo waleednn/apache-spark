@@ -2128,12 +2128,20 @@ class AstBuilder extends DataTypeAstBuilder
     }
 
     val unresolvedTable = UnresolvedInlineTable(aliases, rows.toSeq)
-    val table = if (conf.getConf(SQLConf.EAGER_EVAL_OF_UNRESOLVED_INLINE_TABLE_ENABLED)) {
+    val table = if (canEagerlyEvaluateInlineTable(unresolvedTable)) {
       EvaluateUnresolvedInlineTable.evaluate(unresolvedTable)
     } else {
       unresolvedTable
     }
     table.optionalMap(ctx.tableAlias.strictIdentifier)(aliasPlan)
+  }
+
+  /**
+   * Determines if the inline table can be eagerly evaluated.
+   */
+  private def canEagerlyEvaluateInlineTable(table: UnresolvedInlineTable): Boolean = {
+    conf.getConf(SQLConf.EAGER_EVAL_OF_UNRESOLVED_INLINE_TABLE_ENABLED) &&
+      ResolveInlineTables.canResolveInlineTable(table)
   }
 
   /**
@@ -3346,7 +3354,7 @@ class AstBuilder extends DataTypeAstBuilder
    * Create a String literal expression.
    */
   override def visitStringLiteral(ctx: StringLiteralContext): Literal = withOrigin(ctx) {
-    Literal.create(createString(ctx), conf.defaultStringType)
+    Literal.create(createString(ctx), StringType)
   }
 
   /**
