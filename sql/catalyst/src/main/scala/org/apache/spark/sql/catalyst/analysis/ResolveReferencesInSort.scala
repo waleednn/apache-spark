@@ -16,9 +16,13 @@
  */
 package org.apache.spark.sql.catalyst.analysis
 
+import java.util.Locale
+
+import scala.collection.mutable
+
 import org.apache.spark.sql.catalyst.SQLConfHelper
-import org.apache.spark.sql.catalyst.expressions.SortOrder
-import org.apache.spark.sql.catalyst.plans.logical.{Aggregate, Filter, LogicalPlan, Project, Sort}
+import org.apache.spark.sql.catalyst.expressions.{Alias, Expression, ExtractValue, SortOrder}
+import org.apache.spark.sql.catalyst.plans.logical._
 import org.apache.spark.sql.connector.catalog.CatalogManager
 
 /**
@@ -51,7 +55,8 @@ class ResolveReferencesInSort(val catalogManager: CatalogManager)
   extends SQLConfHelper with ColumnResolutionHelper {
 
   def apply(s: Sort): LogicalPlan = {
-    val resolvedBasic = s.order.map(resolveExpressionByPlanOutput(_, s.child))
+    val resolvedByLCA = resolveByLateralColumnAlias(s)
+    val resolvedBasic = resolvedByLCA.map(resolveExpressionByPlanOutput(_, s.child))
     val resolvedWithAgg = s.child match {
       case Filter(_, agg: Aggregate) => resolvedBasic.map(resolveColWithAgg(_, agg))
       case _ => resolvedBasic.map(resolveColWithAgg(_, s.child))
@@ -67,6 +72,35 @@ class ResolveReferencesInSort(val catalogManager: CatalogManager)
       // Add missing attributes and then project them away.
       val newSort = s.copy(order = resolvedFinal, child = newChild)
       Project(s.child.output, newSort)
+    }
+  }
+
+  private def resolveByLateralColumnAlias(s: Sort): Seq[Expression] = {
+    val aliasMap = mutable.HashMap.empty[String, Either[Alias, Int]]
+    val lcaCandidates = s.child match {
+      case p: Project => p.projectList
+      case Filter(_, agg: Aggregate) => agg.aggregateExpressions
+      case agg: Aggregate => agg.aggregateExpressions
+      case _ => Nil
+    }
+    lcaCandidates.foreach {
+      case Alias(_: ExtractValue, _) =>
+      case a: Alias =>
+        val lowerCasedName = a.name.toLowerCase(Locale.ROOT)
+        aliasMap.get(lowerCasedName) match {
+          case Some(scala.util.Left(_)) =>
+            aliasMap(lowerCasedName) = scala.util.Right(2)
+          case Some(scala.util.Right(count)) =>
+            aliasMap(lowerCasedName) = scala.util.Right(count + 1)
+          case None =>
+            aliasMap += lowerCasedName -> scala.util.Left(a)
+        }
+      case _ =>
+    }
+    if (aliasMap.nonEmpty) {
+      resolveLateralColumnAlias(s.order, aliasMap, throws = false)
+    } else {
+      s.order
     }
   }
 
