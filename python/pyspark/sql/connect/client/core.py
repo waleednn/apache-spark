@@ -630,6 +630,7 @@ class SparkConnectClient(object):
             else DefaultChannelBuilder(connection, channel_options)
         )
         self._user_id = None
+        self._client_id = str(uuid.uuid4())
         self._retry_policies: List[RetryPolicy] = []
 
         retry_policy_args = retry_policy or dict()
@@ -1106,6 +1107,7 @@ class SparkConnectClient(object):
         req = self._execute_plan_request_with_metadata()
         if self._user_id:
             req.user_context.user_id = self._user_id
+        req.user_context.client_id = self._client_id
         req.plan.command.CopyFrom(command)
         data, _, metrics, observed_metrics, properties = self._execute_and_fetch(
             req, observations or {}
@@ -1132,6 +1134,7 @@ class SparkConnectClient(object):
         req = self._execute_plan_request_with_metadata()
         if self._user_id:
             req.user_context.user_id = self._user_id
+        req.user_context.client_id = self._client_id
         req.plan.command.CopyFrom(command)
         for response in self._execute_and_fetch_as_iterator(req, observations or {}):
             if isinstance(response, dict):
@@ -1200,6 +1203,7 @@ class SparkConnectClient(object):
             req.client_observed_server_side_session_id = self._server_session_id
         if self._user_id:
             req.user_context.user_id = self._user_id
+        req.user_context.client_id = self._client_id
         return req
 
     def _analyze_plan_request_with_metadata(self) -> pb2.AnalyzePlanRequest:
@@ -1210,6 +1214,7 @@ class SparkConnectClient(object):
         req.client_type = self._builder.userAgent
         if self._user_id:
             req.user_context.user_id = self._user_id
+        req.user_context.client_id = self._client_id
         return req
 
     def _analyze(self, method: str, **kwargs: Any) -> AnalyzeResult:
@@ -1570,6 +1575,7 @@ class SparkConnectClient(object):
         req.client_type = self._builder.userAgent
         if self._user_id:
             req.user_context.user_id = self._user_id
+        req.user_context.client_id = self._client_id
         return req
 
     def get_configs(self, *keys: str) -> Tuple[Optional[str], ...]:
@@ -1646,6 +1652,7 @@ class SparkConnectClient(object):
             )
         if self._user_id:
             req.user_context.user_id = self._user_id
+        req.user_context.client_id = self._client_id
         return req
 
     def interrupt_all(self) -> Optional[List[str]]:
@@ -1690,6 +1697,7 @@ class SparkConnectClient(object):
         req.client_type = self._builder.userAgent
         if self._user_id:
             req.user_context.user_id = self._user_id
+        req.user_context.client_id = self._client_id
         try:
             for attempt in self._retrying():
                 with attempt:
@@ -1789,6 +1797,7 @@ class SparkConnectClient(object):
             req.client_observed_server_side_session_id = self._server_session_id
         if self._user_id:
             req.user_context.user_id = self._user_id
+        req.user_context.client_id = self._client_id
 
         try:
             return self._stub.FetchErrorDetails(req, metadata=self._builder.metadata())
