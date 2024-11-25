@@ -103,6 +103,45 @@ public class SparkSubmitCommandBuilderSuite extends BaseSuite {
   }
 
   @Test
+  public void testExtraJavaOptionsSanitization() throws Exception {
+    //SPARK-50240: Test to check extra Java options inputs are sanitized
+    Map<String, String> env = new HashMap<>();
+    List<String> sparkSubmitArgs = Arrays.asList(
+            parser.MASTER,
+            "local",
+            parser.CONF,
+            "spark.executor.extraJavaOptions=`touch /tmp/evil` -Xmx2g",
+            SparkLauncher.NO_RESOURCE
+    );
+    List<String> cmd = buildCommand(sparkSubmitArgs, env);
+
+    String extraJavaOptions = null;
+    for (int i = 0; i < cmd.size(); i++) {
+      if (cmd.get(i).equals(parser.CONF)) {
+        String confArg = cmd.get(i + 1);
+        if (confArg.startsWith("spark.executor.extraJavaOptions=")) {
+          extraJavaOptions = confArg.substring("spark.executor.extraJavaOptions=".length());
+          break;
+        }
+        i += 1;
+      }
+    }
+
+    assertNotNull(extraJavaOptions, "spark.executor.extraJavaOptions should be set");
+
+    assertFalse(extraJavaOptions.contains("`"), "Extra Java options should not contain `");
+    assertFalse(extraJavaOptions.contains("$"), "Extra Java options should not contain $");
+    assertFalse(extraJavaOptions.contains(";"), "Extra Java options should not contain ;");
+    assertFalse(extraJavaOptions.contains("&"), "Extra Java options should not contain &");
+    assertFalse(extraJavaOptions.contains("|"), "Extra Java options should not contain |");
+    assertFalse(extraJavaOptions.contains("<"), "Extra Java options should not contain <");
+    assertFalse(extraJavaOptions.contains(">"), "Extra Java options should not contain >");
+
+    assertTrue(extraJavaOptions.contains("-Xmx2g"), "Valid Java options should pass");
+  }
+
+
+  @Test
   public void testCliKillAndStatus() throws Exception {
     List<String> params = Arrays.asList("driver-20160531171222-0000");
     testCLIOpts(null, parser.STATUS, params);
@@ -444,7 +483,7 @@ public class SparkSubmitCommandBuilderSuite extends BaseSuite {
     return builder;
   }
 
-  private List<String> buildCommand(List<String> args, Map<String, String> env) throws Exception {
+  private List<String>  buildCommand(List<String> args, Map<String, String> env) throws Exception {
     return newCommandBuilder(args).buildCommand(env);
   }
 
