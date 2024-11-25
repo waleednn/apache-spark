@@ -974,6 +974,14 @@ message GroupMap {
 
   // (Optional) Timeout configuration for groups that do not receive data for a while.
   optional string timeout_conf = 9;
+
+  optional TransformWithStateInfo tws = 11;
+}
+
+message TransformWithStateInfo {
+  bytes stateful_processor_payload = 1;
+  string time_mode = 2;
+  string output_mode = 3;
 }
 
 message CoGroupMap {
