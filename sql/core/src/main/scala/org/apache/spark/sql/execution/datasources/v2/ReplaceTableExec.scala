@@ -26,6 +26,8 @@ import org.apache.spark.sql.catalyst.plans.logical.TableSpec
 import org.apache.spark.sql.connector.catalog.{CatalogV2Util, Column, Identifier, StagedTable, StagingTableCatalog, Table, TableCatalog}
 import org.apache.spark.sql.connector.expressions.Transform
 import org.apache.spark.sql.errors.QueryCompilationErrors
+import org.apache.spark.sql.execution.SQLExecution
+import org.apache.spark.sql.execution.metric.{SQLMetric, SQLMetrics}
 import org.apache.spark.util.Utils
 
 case class ReplaceTableExec(
@@ -65,6 +67,11 @@ case class AtomicReplaceTableExec(
 
   val tableProperties = CatalogV2Util.convertTableProperties(tableSpec)
 
+  override val metrics: Map[String, SQLMetric] =
+    catalog.supportedCustomMetrics().map { metric =>
+      metric.name() -> SQLMetrics.createV2CustomMetric(sparkContext, metric)
+    }.toMap
+
   override protected def run(): Seq[InternalRow] = {
     if (catalog.tableExists(identifier)) {
       val table = catalog.loadTable(identifier)
@@ -93,6 +100,15 @@ case class AtomicReplaceTableExec(
   private def commitOrAbortStagedChanges(staged: StagedTable): Unit = {
     Utils.tryWithSafeFinallyAndFailureCallbacks({
       staged.commitStagedChanges()
+
+      if (catalog.supportedCustomMetrics().nonEmpty) {
+        for (taskMetric <- staged.reportDriverMetrics) {
+          metrics.get(taskMetric.name()).foreach(_.set(taskMetric.value()))
+        }
+
+        val executionId = sparkContext.getLocalProperty(SQLExecution.EXECUTION_ID_KEY)
+        SQLMetrics.postDriverMetricUpdates(sparkContext, executionId, metrics.values.toSeq)
+      }
     })(catchBlock = {
       staged.abortStagedChanges()
     })
