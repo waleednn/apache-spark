@@ -561,7 +561,9 @@ class TransformWithStateInPandasTestsMixin:
             EventTimeStatefulProcessor(), check_results
         )
 
-    def _test_transform_with_state_init_state_in_pandas(self, stateful_processor, check_results):
+    def _test_transform_with_state_init_state_in_pandas(
+        self, stateful_processor, check_results, time_mode="None"
+    ):
         input_path = tempfile.mkdtemp()
         self._prepare_test_resource1(input_path)
         time.sleep(2)
@@ -589,7 +591,7 @@ class TransformWithStateInPandasTestsMixin:
                 statefulProcessor=stateful_processor,
                 outputStructType=output_schema,
                 outputMode="Update",
-                timeMode="None",
+                timeMode=time_mode,
                 initialState=initial_state,
             )
             .writeStream.queryName("this_query")
@@ -701,6 +703,35 @@ class TransformWithStateInPandasTestsMixin:
             SimpleStatefulProcessorWithInitialState(), check_results, initial_state
         )
 
+    def test_transform_with_state_init_state_with_timers(self):
+        def check_results(batch_df, batch_id):
+            if batch_id == 0:
+                # timers are registered and handled in the first batch for
+                # rows in initial state; For key=0 and key=3 which contains
+                # expired timers, both should be handled by handleExpiredTimers
+                # regardless of whether key exists in the data rows or not
+                expired_df = batch_df.filter(batch_df["id"].contains("expired"))
+                data_df = batch_df.filter(~batch_df["id"].contains("expired"))
+                assert set(expired_df.sort("id").select("id").collect()) == {
+                    Row(id="0-expired"),
+                    Row(id="3-expired"),
+                }
+                assert set(data_df.sort("id").collect()) == {
+                    Row(id="0", value=str(789 + 123 + 46)),
+                    Row(id="1", value=str(146 + 346)),
+                }
+            else:
+                # handleInitialState is only processed in the first batch,
+                # no more timer is registered so no more expired timers
+                assert set(batch_df.sort("id").collect()) == {
+                    Row(id="0", value=str(789 + 123 + 46 + 67)),
+                    Row(id="3", value=str(987 + 12)),
+                }
+
+        self._test_transform_with_state_init_state_in_pandas(
+            StatefulProcessorWithInitialStateTimers(), check_results, "processingTime"
+        )
+
 
 class SimpleStatefulProcessorWithInitialState(StatefulProcessor):
     # this dict is the same as input initial state dataframe
@@ -709,10 +740,9 @@ class SimpleStatefulProcessorWithInitialState(StatefulProcessor):
     def init(self, handle: StatefulProcessorHandle) -> None:
         state_schema = StructType([StructField("value", IntegerType(), True)])
         self.value_state = handle.getValueState("value_state", state_schema)
+        self.handle = handle
 
-    def handleInputRows(
-        self, key, rows, timer_values, expired_timer_info
-    ) -> Iterator[pd.DataFrame]:
+    def handleInputRows(self, key, rows, timer_values) -> Iterator[pd.DataFrame]:
         exists = self.value_state.exists()
         if exists:
             value_row = self.value_state.get()
@@ -735,7 +765,7 @@ class SimpleStatefulProcessorWithInitialState(StatefulProcessor):
         else:
             yield pd.DataFrame({"id": key, "value": str(accumulated_value)})
 
-    def handleInitialState(self, key, initialState) -> None:
+    def handleInitialState(self, key, initialState, timer_values) -> None:
         init_val = initialState.at[0, "initVal"]
         self.value_state.update((init_val,))
         if len(key) == 1:
@@ -743,6 +773,19 @@ class SimpleStatefulProcessorWithInitialState(StatefulProcessor):
 
     def close(self) -> None:
         pass
+
+
+class StatefulProcessorWithInitialStateTimers(SimpleStatefulProcessorWithInitialState):
+    def handleExpiredTimer(self, key, timer_values, expired_timer_info) -> Iterator[pd.DataFrame]:
+        self.handle.deleteTimer(expired_timer_info.get_expiry_time_in_ms())
+        str_key = f"{str(key[0])}-expired"
+        yield pd.DataFrame(
+            {"id": (str_key,), "value": str(expired_timer_info.get_expiry_time_in_ms())}
+        )
+
+    def handleInitialState(self, key, initialState, timer_values) -> None:
+        super().handleInitialState(key, initialState, timer_values)
+        self.handle.registerTimer(timer_values.get_current_processing_time_in_ms() - 1)
 
 
 # A stateful processor that output the max event time it has seen. Register timer for
@@ -753,33 +796,30 @@ class EventTimeStatefulProcessor(StatefulProcessor):
         self.handle = handle
         self.max_state = handle.getValueState("max_state", state_schema)
 
-    def handleInputRows(
-        self, key, rows, timer_values, expired_timer_info
-    ) -> Iterator[pd.DataFrame]:
-        if expired_timer_info.is_valid():
-            self.max_state.clear()
-            self.handle.deleteTimer(expired_timer_info.get_expiry_time_in_ms())
-            str_key = f"{str(key[0])}-expired"
-            yield pd.DataFrame(
-                {"id": (str_key,), "timestamp": str(expired_timer_info.get_expiry_time_in_ms())}
-            )
+    def handleExpiredTimer(self, key, timer_values, expired_timer_info) -> Iterator[pd.DataFrame]:
+        self.max_state.clear()
+        self.handle.deleteTimer(expired_timer_info.get_expiry_time_in_ms())
+        str_key = f"{str(key[0])}-expired"
+        yield pd.DataFrame(
+            {"id": (str_key,), "timestamp": str(expired_timer_info.get_expiry_time_in_ms())}
+        )
 
+    def handleInputRows(self, key, rows, timer_values) -> Iterator[pd.DataFrame]:
+        timestamp_list = []
+        for pdf in rows:
+            # int64 will represent timestamp in nanosecond, restore to second
+            timestamp_list.extend((pdf["eventTime"].astype("int64") // 10**9).tolist())
+
+        if self.max_state.exists():
+            cur_max = int(self.max_state.get()[0])
         else:
-            timestamp_list = []
-            for pdf in rows:
-                # int64 will represent timestamp in nanosecond, restore to second
-                timestamp_list.extend((pdf["eventTime"].astype("int64") // 10**9).tolist())
+            cur_max = 0
+        max_event_time = str(max(cur_max, max(timestamp_list)))
 
-            if self.max_state.exists():
-                cur_max = int(self.max_state.get()[0])
-            else:
-                cur_max = 0
-            max_event_time = str(max(cur_max, max(timestamp_list)))
+        self.max_state.update((max_event_time,))
+        self.handle.registerTimer(timer_values.get_current_watermark_in_ms())
 
-            self.max_state.update((max_event_time,))
-            self.handle.registerTimer(timer_values.get_current_watermark_in_ms())
-
-            yield pd.DataFrame({"id": key, "timestamp": max_event_time})
+        yield pd.DataFrame({"id": key, "timestamp": max_event_time})
 
     def close(self) -> None:
         pass
@@ -793,54 +833,51 @@ class ProcTimeStatefulProcessor(StatefulProcessor):
         self.handle = handle
         self.count_state = handle.getValueState("count_state", state_schema)
 
-    def handleInputRows(
-        self, key, rows, timer_values, expired_timer_info
-    ) -> Iterator[pd.DataFrame]:
-        if expired_timer_info.is_valid():
-            # reset count state each time the timer is expired
-            timer_list_1 = [e for e in self.handle.listTimers()]
-            timer_list_2 = []
-            idx = 0
-            for e in self.handle.listTimers():
-                timer_list_2.append(e)
-                # check multiple iterator on the same grouping key works
-                assert timer_list_2[idx] == timer_list_1[idx]
-                idx += 1
+    def handleExpiredTimer(self, key, timer_values, expired_timer_info) -> Iterator[pd.DataFrame]:
+        # reset count state each time the timer is expired
+        timer_list_1 = [e for e in self.handle.listTimers()]
+        timer_list_2 = []
+        idx = 0
+        for e in self.handle.listTimers():
+            timer_list_2.append(e)
+            # check multiple iterator on the same grouping key works
+            assert timer_list_2[idx] == timer_list_1[idx]
+            idx += 1
 
-            if len(timer_list_1) > 0:
-                # before deleting the expiring timers, there are 2 timers -
-                # one timer we just registered, and one that is going to be deleted
-                assert len(timer_list_1) == 2
-            self.count_state.clear()
-            self.handle.deleteTimer(expired_timer_info.get_expiry_time_in_ms())
-            yield pd.DataFrame(
-                {
-                    "id": key,
-                    "countAsString": str("-1"),
-                    "timeValues": str(expired_timer_info.get_expiry_time_in_ms()),
-                }
-            )
+        if len(timer_list_1) > 0:
+            # before deleting the expiring timers, there are 2 timers -
+            # one timer we just registered, and one that is going to be deleted
+            assert len(timer_list_1) == 2
+        self.count_state.clear()
+        self.handle.deleteTimer(expired_timer_info.get_expiry_time_in_ms())
+        yield pd.DataFrame(
+            {
+                "id": key,
+                "countAsString": str("-1"),
+                "timeValues": str(expired_timer_info.get_expiry_time_in_ms()),
+            }
+        )
 
+    def handleInputRows(self, key, rows, timer_values) -> Iterator[pd.DataFrame]:
+        if not self.count_state.exists():
+            count = 0
         else:
-            if not self.count_state.exists():
-                count = 0
-            else:
-                count = int(self.count_state.get()[0])
+            count = int(self.count_state.get()[0])
 
-            if key == ("0",):
-                self.handle.registerTimer(timer_values.get_current_processing_time_in_ms())
+        if key == ("0",):
+            self.handle.registerTimer(timer_values.get_current_processing_time_in_ms())
 
-            rows_count = 0
-            for pdf in rows:
-                pdf_count = len(pdf)
-                rows_count += pdf_count
+        rows_count = 0
+        for pdf in rows:
+            pdf_count = len(pdf)
+            rows_count += pdf_count
 
-            count = count + rows_count
+        count = count + rows_count
 
-            self.count_state.update((str(count),))
-            timestamp = str(timer_values.get_current_processing_time_in_ms())
+        self.count_state.update((str(count),))
+        timestamp = str(timer_values.get_current_processing_time_in_ms())
 
-            yield pd.DataFrame({"id": key, "countAsString": str(count), "timeValues": timestamp})
+        yield pd.DataFrame({"id": key, "countAsString": str(count), "timeValues": timestamp})
 
     def close(self) -> None:
         pass
@@ -856,9 +893,7 @@ class SimpleStatefulProcessor(StatefulProcessor, unittest.TestCase):
         self.temp_state = handle.getValueState("tempState", state_schema)
         handle.deleteIfExists("tempState")
 
-    def handleInputRows(
-        self, key, rows, timer_values, expired_timer_info
-    ) -> Iterator[pd.DataFrame]:
+    def handleInputRows(self, key, rows, timer_values) -> Iterator[pd.DataFrame]:
         with self.assertRaisesRegex(PySparkRuntimeError, "Error checking value state exists"):
             self.temp_state.exists()
         new_violations = 0
@@ -907,9 +942,7 @@ class TTLStatefulProcessor(StatefulProcessor):
             "ttl-map-state", user_key_schema, state_schema, 10000
         )
 
-    def handleInputRows(
-        self, key, rows, timer_values, expired_timer_info
-    ) -> Iterator[pd.DataFrame]:
+    def handleInputRows(self, key, rows, timer_values) -> Iterator[pd.DataFrame]:
         count = 0
         ttl_count = 0
         ttl_list_state_count = 0
@@ -959,9 +992,7 @@ class InvalidSimpleStatefulProcessor(StatefulProcessor):
         state_schema = StructType([StructField("value", IntegerType(), True)])
         self.num_violations_state = handle.getValueState("numViolations", state_schema)
 
-    def handleInputRows(
-        self, key, rows, timer_values, expired_timer_info
-    ) -> Iterator[pd.DataFrame]:
+    def handleInputRows(self, key, rows, timer_values) -> Iterator[pd.DataFrame]:
         count = 0
         exists = self.num_violations_state.exists()
         assert not exists
@@ -985,9 +1016,7 @@ class ListStateProcessor(StatefulProcessor):
         self.list_state1 = handle.getListState("listState1", state_schema)
         self.list_state2 = handle.getListState("listState2", state_schema)
 
-    def handleInputRows(
-        self, key, rows, timer_values, expired_timer_info
-    ) -> Iterator[pd.DataFrame]:
+    def handleInputRows(self, key, rows, timer_values) -> Iterator[pd.DataFrame]:
         count = 0
         for pdf in rows:
             list_state_rows = [(120,), (20,)]
@@ -1042,9 +1071,7 @@ class MapStateProcessor(StatefulProcessor):
         value_schema = StructType([StructField("count", IntegerType(), True)])
         self.map_state = handle.getMapState("mapState", key_schema, value_schema)
 
-    def handleInputRows(
-        self, key, rows, timer_values, expired_timer_info
-    ) -> Iterator[pd.DataFrame]:
+    def handleInputRows(self, key, rows, timer_values) -> Iterator[pd.DataFrame]:
         count = 0
         key1 = ("key1",)
         key2 = ("key2",)

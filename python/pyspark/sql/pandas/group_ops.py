@@ -16,7 +16,7 @@
 #
 import itertools
 import sys
-from typing import Any, Iterator, List, Optional, Union, TYPE_CHECKING, cast
+from typing import Any, Iterator, List, Optional, Union, Tuple, TYPE_CHECKING, cast
 import warnings
 
 from pyspark.errors import PySparkTypeError
@@ -502,53 +502,59 @@ class PandasGroupedOpsMixin:
         if isinstance(outputStructType, str):
             outputStructType = cast(StructType, _parse_datatype_string(outputStructType))
 
-        def handle_data_with_timers(
+        def get_timestamps(
             statefulProcessorApiClient: StatefulProcessorApiClient,
-            key: Any,
-            inputRows: Iterator["PandasDataFrameLike"],
-        ) -> Iterator["PandasDataFrameLike"]:
-            statefulProcessorApiClient.set_implicit_key(key)
+        ) -> Tuple[int, int]:
             if timeMode != "none":
                 batch_timestamp = statefulProcessorApiClient.get_batch_timestamp()
                 watermark_timestamp = statefulProcessorApiClient.get_watermark_timestamp()
             else:
                 batch_timestamp = -1
                 watermark_timestamp = -1
-            # process with invalid expiry timer info and emit data rows
-            data_iter = statefulProcessor.handleInputRows(
-                key,
-                inputRows,
-                TimerValues(batch_timestamp, watermark_timestamp),
-                ExpiredTimerInfo(False),
-            )
-            statefulProcessorApiClient.set_handle_state(StatefulProcessorHandleState.DATA_PROCESSED)
+            return batch_timestamp, watermark_timestamp
 
-            if timeMode == "processingtime":
+        def handle_data_with_timers(
+            statefulProcessorApiClient: StatefulProcessorApiClient,
+            key: Any,
+            batch_timestamp: int,
+            watermark_timestamp: int,
+            inputRows: Optional[Iterator["PandasDataFrameLike"]] = None,
+        ) -> Iterator["PandasDataFrameLike"]:
+            statefulProcessorApiClient.set_implicit_key(key)
+            # process with data rows
+            if inputRows is not None:
+                data_iter = statefulProcessor.handleInputRows(
+                    key, inputRows, TimerValues(batch_timestamp, watermark_timestamp)
+                )
+                result_iter_list = [data_iter]
+                statefulProcessorApiClient.set_handle_state(
+                    StatefulProcessorHandleState.DATA_PROCESSED
+                )
+            else:
+                result_iter_list = []
+
+            if timeMode.lower() == "processingtime":
                 expiry_list_iter = statefulProcessorApiClient.get_expiry_timers_iterator(
                     batch_timestamp
                 )
-            elif timeMode == "eventtime":
+            elif timeMode.lower() == "eventtime":
                 expiry_list_iter = statefulProcessorApiClient.get_expiry_timers_iterator(
                     watermark_timestamp
                 )
             else:
                 expiry_list_iter = iter([[]])
 
-            result_iter_list = [data_iter]
-            # process with valid expiry time info and with empty input rows,
-            # only timer related rows will be emitted
+            # process with expiry timers, only timer related rows will be emitted
             for expiry_list in expiry_list_iter:
                 for key_obj, expiry_timestamp in expiry_list:
                     result_iter_list.append(
-                        statefulProcessor.handleInputRows(
+                        statefulProcessor.handleExpiredTimer(
                             key_obj,
-                            iter([]),
                             TimerValues(batch_timestamp, watermark_timestamp),
-                            ExpiredTimerInfo(True, expiry_timestamp),
+                            ExpiredTimerInfo(expiry_timestamp),
                         )
                     )
             # TODO(SPARK-49603) set the handle state in the lazily initialized iterator
-
             result = itertools.chain(*result_iter_list)
             return result
 
@@ -573,7 +579,11 @@ class PandasGroupedOpsMixin:
                 statefulProcessorApiClient.set_handle_state(StatefulProcessorHandleState.CLOSED)
                 return iter([])
 
-            result = handle_data_with_timers(statefulProcessorApiClient, key, inputRows)
+            batch_timestamp, watermark_timestamp = get_timestamps(statefulProcessorApiClient)
+
+            result = handle_data_with_timers(
+                statefulProcessorApiClient, key, batch_timestamp, watermark_timestamp, inputRows
+            )
             return result
 
         def transformWithStateWithInitStateUDF(
@@ -610,12 +620,15 @@ class PandasGroupedOpsMixin:
                 statefulProcessorApiClient.set_handle_state(StatefulProcessorHandleState.CLOSED)
                 return iter([])
 
+            batch_timestamp, watermark_timestamp = get_timestamps(statefulProcessorApiClient)
+
             # only process initial state if first batch and initial state is not None
             if initialStates is not None:
                 for cur_initial_state in initialStates:
                     statefulProcessorApiClient.set_implicit_key(key)
-                    # TODO(SPARK-50194) integration with new timer API with initial state
-                    statefulProcessor.handleInitialState(key, cur_initial_state)
+                    statefulProcessor.handleInitialState(
+                        key, cur_initial_state, TimerValues(batch_timestamp, watermark_timestamp)
+                    )
 
             # if we don't have input rows for the given key but only have initial state
             # for the grouping key, the inputRows iterator could be empty
@@ -628,10 +641,15 @@ class PandasGroupedOpsMixin:
                 inputRows = itertools.chain([first], inputRows)
 
             if not input_rows_empty:
-                result = handle_data_with_timers(statefulProcessorApiClient, key, inputRows)
+                result = handle_data_with_timers(
+                    statefulProcessorApiClient, key, batch_timestamp, watermark_timestamp, inputRows
+                )
             else:
-                result = iter([])
-
+                # if the input rows is empty, we still need to handle the expired timers registered
+                # in the initial state
+                result = handle_data_with_timers(
+                    statefulProcessorApiClient, key, batch_timestamp, watermark_timestamp, None
+                )
             return result
 
         if isinstance(outputStructType, str):
